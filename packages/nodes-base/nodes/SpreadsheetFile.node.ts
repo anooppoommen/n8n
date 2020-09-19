@@ -28,7 +28,7 @@ import {
 function flattenObject (data: IDataObject) {
 	const returnData: IDataObject = {};
 	for (const key1 of Object.keys(data)) {
-		if ((typeof data[key1]) === 'object') {
+		if (data[key1] !== null && (typeof data[key1]) === 'object') {
 			const flatObject = flattenObject(data[key1] as IDataObject);
 			for (const key2 in flatObject) {
 				if (flatObject[key2] === undefined) {
@@ -109,28 +109,33 @@ export class SpreadsheetFile implements INodeType {
 				type: 'options',
 				options: [
 					{
-						name: 'csv',
+						name: 'CSV',
 						value: 'csv',
 						description: 'Comma-separated values',
 					},
 					{
-						name: 'ods',
-						value: 'ods',
-						description: 'OpenDocument Spreadsheet',
-					},
-					{
-						name: 'rtf',
-						value: 'rtf',
-						description: 'Rich Text Format',
-					},
-					{
-						name: 'html',
+						name: 'HTML',
 						value: 'html',
 						description: 'HTML Table',
 					},
 					{
-						name: 'xls',
+						name: 'ODS',
+						value: 'ods',
+						description: 'OpenDocument Spreadsheet',
+					},
+					{
+						name: 'RTF',
+						value: 'rtf',
+						description: 'Rich Text Format',
+					},
+					{
+						name: 'XLS',
 						value: 'xls',
+						description: 'Excel',
+					},
+					{
+						name: 'XLSX',
+						value: 'xlsx',
 						description: 'Excel',
 					},
 				],
@@ -156,10 +161,112 @@ export class SpreadsheetFile implements INodeType {
 							'toFile',
 						],
 					},
-
 				},
 				placeholder: '',
 				description: 'Name of the binary property in which to save<br />the binary data of the spreadsheet file.',
+			},
+
+			{
+				displayName: 'Options',
+				name: 'options',
+				type: 'collection',
+				placeholder: 'Add Option',
+				default: {},
+				options: [
+					{
+						displayName: 'Compression',
+						name: 'compression',
+						type: 'boolean',
+						displayOptions: {
+							show: {
+								'/operation': [
+									'toFile',
+								],
+								'/fileFormat': [
+									'xlsx',
+									'ods',
+								],
+							},
+						},
+						default: false,
+						description: 'Weather compression will be applied or not',
+					},
+					{
+						displayName: 'File Name',
+						name: 'fileName',
+						type: 'string',
+						displayOptions: {
+							show: {
+								'/operation': [
+									'toFile',
+								],
+							},
+						},
+						default: '',
+						description: 'File name to set in binary data. By default will "spreadsheet.<fileFormat>" be used.',
+					},
+					{
+						displayName: 'RAW Data',
+						name: 'rawData',
+						type: 'boolean',
+						displayOptions: {
+							show: {
+								'/operation': [
+									'fromFile'
+								],
+							},
+						},
+						default: false,
+						description: 'If the data should be returned RAW instead of parsed.',
+					},
+					{
+						displayName: 'Read As String',
+						name: 'readAsString',
+						type: 'boolean',
+						displayOptions: {
+							show: {
+								'/operation': [
+									'fromFile'
+								],
+							},
+						},
+						default: false,
+						description: 'In some cases and file formats, it is necessary to read<br />specifically as string else some special character get interpreted wrong.',
+					},
+					{
+						displayName: 'Sheet Name',
+						name: 'sheetName',
+						type: 'string',
+						displayOptions: {
+							show: {
+								'/operation': [
+									'fromFile',
+								],
+							},
+						},
+						default: 'Sheet',
+						description: 'Name of the sheet to read from in the spreadsheet (if supported). If not set, the first one gets chosen.',
+					},
+					{
+						displayName: 'Sheet Name',
+						name: 'sheetName',
+						type: 'string',
+						displayOptions: {
+							show: {
+								'/operation': [
+									'toFile',
+								],
+								'/fileFormat': [
+									'ods',
+									'xls',
+									'xlsx',
+								],
+							},
+						},
+						default: 'Sheet',
+						description: 'Name of the sheet to create in the spreadsheet.',
+					},
+				],
 			},
 		]
 	};
@@ -180,7 +287,8 @@ export class SpreadsheetFile implements INodeType {
 			for (let i = 0; i < items.length; i++) {
 				item = items[i];
 
-				const binaryPropertyName = this.getNodeParameter('binaryPropertyName', 0) as string;
+				const binaryPropertyName = this.getNodeParameter('binaryPropertyName', i) as string;
+				const options = this.getNodeParameter('options', i, {}) as IDataObject;
 
 				if (item.binary === undefined || item.binary[binaryPropertyName] === undefined) {
 					// Property did not get found on item
@@ -189,14 +297,27 @@ export class SpreadsheetFile implements INodeType {
 
 				// Read the binary spreadsheet data
 				const binaryData = Buffer.from(item.binary[binaryPropertyName].data, BINARY_ENCODING);
-				const workbook = xlsxRead(binaryData);
+				let workbook;
+				if (options.readAsString === true) {
+					workbook = xlsxRead(binaryData.toString(), { type: 'string', raw: options.rawData as boolean });
+				} else {
+					workbook = xlsxRead(binaryData, { raw: options.rawData as boolean });
+				}
 
 				if (workbook.SheetNames.length === 0) {
-					throw new Error('File does not have any sheets!');
+					throw new Error('Spreadsheet does not have any sheets!');
+				}
+
+				let sheetName = workbook.SheetNames[0];
+				if (options.sheetName) {
+					if (!workbook.SheetNames.includes(options.sheetName as string)) {
+						throw new Error(`Spreadsheet does not contain sheet called "${options.sheetName}"!`);
+					}
+					sheetName = options.sheetName as string;
 				}
 
 				// Convert it to json
-				const sheetJson = xlsxUtils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+				const sheetJson = xlsxUtils.sheet_to_json(workbook.Sheets[sheetName]);
 
 				// Check if data could be found in file
 				if (sheetJson.length === 0) {
@@ -214,6 +335,7 @@ export class SpreadsheetFile implements INodeType {
 			// Write the workflow data to spreadsheet file
 			const binaryPropertyName = this.getNodeParameter('binaryPropertyName', 0) as string;
 			const fileFormat = this.getNodeParameter('fileFormat', 0) as string;
+			const options = this.getNodeParameter('options', 0, {}) as IDataObject;
 
 			// Get the json data of the items and flatten it
 			let item: INodeExecutionData;
@@ -238,12 +360,20 @@ export class SpreadsheetFile implements INodeType {
 				wopts.bookType = 'rtf';
 			} else if (fileFormat === 'ods') {
 				wopts.bookType = 'ods';
+				if (options.compression) {
+					wopts.compression = true;
+				}
 			} else if (fileFormat === 'xls') {
-				wopts.bookType = 'xlml';
+				wopts.bookType = 'xls';
+			} else if (fileFormat === 'xlsx') {
+				wopts.bookType = 'xlsx';
+				if (options.compression) {
+					wopts.compression = true;
+				}
 			}
 
 			// Convert the data in the correct format
-			const sheetName = 'Sheet';
+			const sheetName = options.sheetName as string || 'Sheet';
 			const wb: WorkBook = {
 				SheetNames: [sheetName],
 				Sheets: {
@@ -258,7 +388,12 @@ export class SpreadsheetFile implements INodeType {
 				binary: {},
 			};
 
-			newItem.binary![binaryPropertyName] = await this.helpers.prepareBinaryData(wbout, `spreadsheet.${fileFormat}`);
+			let fileName = `spreadsheet.${fileFormat}`;
+			if (options.fileName !== undefined) {
+				fileName = options.fileName as string;
+			}
+
+			newItem.binary![binaryPropertyName] = await this.helpers.prepareBinaryData(wbout, fileName);
 
 			const newItems = [];
 			newItems.push(newItem);

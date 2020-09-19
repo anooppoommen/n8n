@@ -1,5 +1,6 @@
 <template>
 	<div id="side-menu">
+		<about :dialogVisible="aboutDialogVisible" @closeDialog="closeAboutDialog"></about>
 		<executions-list :dialogVisible="executionsListDialogVisible" @closeDialog="closeExecutionsListOpenDialog"></executions-list>
 		<credentials-list :dialogVisible="credentialOpenDialogVisible" @closeDialog="closeCredentialOpenDialog"></credentials-list>
 		<credentials-edit :dialogVisible="credentialNewDialogVisible" @closeDialog="closeCredentialNewDialog"></credentials-edit>
@@ -14,15 +15,9 @@
 			<el-menu default-active="workflow" @select="handleSelect" :collapse="isCollapsed">
 
 				<el-menu-item index="logo" class="logo-item">
-					<el-tooltip placement="top" effect="light">
-						<div slot="content">
-							n8n.io - Currently installed version {{versionCli}}
-						</div>
-						<img src="/n8n-icon-small.png" class="icon" alt="n8n.io"/>
-
-					</el-tooltip>
-					<a href="https://n8n.io" class="logo-text" target="_blank" slot="title">
-						n8n.io
+					<a href="https://n8n.io" target="_blank" class="logo">
+						<img :src="basePath + 'n8n-icon-small.png'" class="icon" alt="n8n.io"/>
+						<span class="logo-text" slot="title">n8n.io</span>
 					</a>
 				</el-menu-item>
 
@@ -54,6 +49,12 @@
 						<template slot="title">
 							<font-awesome-icon icon="copy"/>
 							<span slot="title" class="item-title">Save As</span>
+						</template>
+					</el-menu-item>
+					<el-menu-item index="workflow-rename" :disabled="!currentWorkflow">
+						<template slot="title">
+							<font-awesome-icon icon="edit"/>
+							<span slot="title" class="item-title">Rename</span>
 						</template>
 					</el-menu-item>
 					<el-menu-item index="workflow-delete" :disabled="!currentWorkflow">
@@ -143,6 +144,12 @@
 							</a>
 						</template>
 					</el-menu-item>
+					<el-menu-item index="help-about">
+						<template slot="title">
+							<font-awesome-icon class="about-icon" icon="info"/>
+							<span slot="title" class="item-title">About n8n</span>
+						</template>
+					</el-menu-item>
 				</el-submenu>
 
 			</el-menu>
@@ -154,6 +161,7 @@
 
 <script lang="ts">
 import Vue from 'vue';
+import { MessageBoxInputData } from 'element-ui/types/message-box';
 
 import {
 	IExecutionResponse,
@@ -161,6 +169,7 @@ import {
 	IWorkflowDataUpdate,
 } from '../Interface';
 
+import About from '@/components/About.vue';
 import CredentialsEdit from '@/components/CredentialsEdit.vue';
 import CredentialsList from '@/components/CredentialsList.vue';
 import ExecutionsList from '@/components/ExecutionsList.vue';
@@ -170,7 +179,9 @@ import WorkflowSettings from '@/components/WorkflowSettings.vue';
 import { genericHelpers } from '@/components/mixins/genericHelpers';
 import { restApi } from '@/components/mixins/restApi';
 import { showMessage } from '@/components/mixins/showMessage';
+import { titleChange } from '@/components/mixins/titleChange';
 import { workflowHelpers } from '@/components/mixins/workflowHelpers';
+import { workflowSave } from '@/components/mixins/workflowSave';
 import { workflowRun } from '@/components/mixins/workflowRun';
 
 import { saveAs } from 'file-saver';
@@ -181,12 +192,15 @@ export default mixins(
 	genericHelpers,
 	restApi,
 	showMessage,
+	titleChange,
 	workflowHelpers,
 	workflowRun,
+	workflowSave,
 )
 	.extend({
 		name: 'MainHeader',
 		components: {
+			About,
 			CredentialsEdit,
 			CredentialsList,
 			ExecutionsList,
@@ -195,6 +209,9 @@ export default mixins(
 		},
 		data () {
 			return {
+				aboutDialogVisible: false,
+				// @ts-ignore
+				basePath: this.$store.getters.getBaseUrl,
 				isCollapsed: true,
 				credentialNewDialogVisible: false,
 				credentialOpenDialogVisible: false,
@@ -242,9 +259,6 @@ export default mixins(
 			currentWorkflow (): string {
 				return this.$route.params.name;
 			},
-			versionCli (): string {
-				return this.$store.getters.versionCli;
-			},
 			workflowExecution (): IExecutionResponse | null {
 				return this.$store.getters.getWorkflowExecution;
 			},
@@ -259,6 +273,9 @@ export default mixins(
 			clearExecutionData () {
 				this.$store.commit('setWorkflowExecutionData', null);
 				this.updateNodesExecutionIssues();
+			},
+			closeAboutDialog () {
+				this.aboutDialogVisible = false;
 			},
 			closeWorkflowOpenDialog () {
 				this.workflowOpenDialogVisible = false;
@@ -341,10 +358,53 @@ export default mixins(
 							cancelButtonText: 'Cancel',
 							inputErrorMessage: 'Invalid URL',
 							inputPattern: /^http[s]?:\/\/.*\.json$/i,
-						});
+						}) as MessageBoxInputData;
 
 						this.$root.$emit('importWorkflowUrl', { url: promptResponse.value });
 					} catch (e) {}
+				} else if (key === 'workflow-rename') {
+					const workflowName = await this.$prompt(
+						'Enter new workflow name',
+						'Rename',
+						{
+							inputValue: this.workflowName,
+							confirmButtonText: 'Rename',
+							cancelButtonText: 'Cancel',
+						},
+					)
+						.then((data) => {
+							// @ts-ignore
+							return data.value;
+						})
+						.catch(() => {
+							// User did cancel
+							return undefined;
+						});
+
+					if (workflowName === undefined || workflowName === this.workflowName) {
+						return;
+					}
+
+					const workflowId = this.$store.getters.workflowId;
+
+					const updateData = {
+						name: workflowName,
+					};
+
+					try {
+						await this.restApi().updateWorkflow(workflowId, updateData);
+					} catch (error) {
+						this.$showError(error, 'Problem renaming the workflow', 'There was a problem renaming the workflow:');
+						return;
+					}
+
+					this.$store.commit('setWorkflowName', workflowName);
+
+					this.$showMessage({
+						title: 'Workflow renamed',
+						message: `The workflow got renamed to "${workflowName}"!`,
+						type: 'success',
+					});
 				} else if (key === 'workflow-delete') {
 					const deleteConfirmed = await this.confirmMessage(`Are you sure that you want to delete the workflow "${this.workflowName}"?`, 'Delete Workflow?', 'warning', 'Yes, delete!');
 
@@ -359,7 +419,8 @@ export default mixins(
 						this.$showError(error, 'Problem deleting the workflow', 'There was a problem deleting the workflow:');
 						return;
 					}
-
+					// Reset tab title since workflow is deleted.
+					this.$titleReset();
 					this.$showMessage({
 						title: 'Workflow got deleted',
 						message: `The workflow "${this.workflowName}" got deleted!`,
@@ -382,6 +443,8 @@ export default mixins(
 					this.saveCurrentWorkflow();
 				} else if (key === 'workflow-save-as') {
 					this.saveCurrentWorkflow(true);
+				} else if (key === 'help-about') {
+					this.aboutDialogVisible = true;
 				} else if (key === 'workflow-settings') {
 					this.workflowSettingsDialogVisible = true;
 				} else if (key === 'workflow-new') {
@@ -414,6 +477,9 @@ export default mixins(
 </script>
 
 <style lang="scss">
+.about-icon {
+	padding-left: 5px;
+}
 
 #collapse-change-button {
 	position: absolute;
@@ -468,7 +534,11 @@ export default mixins(
 	}
 }
 
-a.logo-text {
+a.logo {
+	text-decoration: none;
+}
+
+.logo-text {
 	position: relative;
 	top: -3px;
 	left: 5px;

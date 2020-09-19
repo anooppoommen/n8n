@@ -23,10 +23,11 @@ module.exports = {
 	css: {
 		loaderOptions: {
 			sass: {
-				data: `
+				prependData: `
 					@import "@/n8n-theme-variables.scss";
 				`,
 			},
 		},
 	},
+	publicPath: process.env.VUE_APP_PUBLIC_PATH ? process.env.VUE_APP_PUBLIC_PATH : '/',
 };

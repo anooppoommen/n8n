@@ -3,13 +3,14 @@ import {
 	IExecuteSingleFunctions,
 } from 'n8n-core';
 import {
+	IDataObject,
 	INodeTypeDescription,
 	INodeExecutionData,
 	INodeType,
 } from 'n8n-workflow';
 
 import { createTransport } from 'nodemailer';
-
+import SMTPTransport = require('nodemailer/lib/smtp-transport');
 
 export class EmailSend implements INodeType {
 	description: INodeTypeDescription = {
@@ -32,7 +33,7 @@ export class EmailSend implements INodeType {
 			}
 		],
 		properties: [
-			// TODO: Add cc, bcc and choice for text as text or html  (maybe also from name)
+			// TODO: Add choice for text as text or html  (maybe also from name)
 			{
 				displayName: 'From Email',
 				name: 'fromEmail',
@@ -56,9 +57,16 @@ export class EmailSend implements INodeType {
 				name: 'ccEmail',
 				type: 'string',
 				default: '',
-				required: false,
 				placeholder: 'cc@example.com',
 				description: 'Email address of CC recipient.',
+			},
+			{
+				displayName: 'BCC Email',
+				name: 'bccEmail',
+				type: 'string',
+				default: '',
+				placeholder: 'bcc@example.com',
+				description: 'Email address of BCC recipient.',
 			},
 			{
 				displayName: 'Subject',
@@ -96,6 +104,22 @@ export class EmailSend implements INodeType {
 				default: '',
 				description: 'Name of the binary properties which contain<br />data which should be added to email as attachment.<br />Multiple ones can be comma separated.',
 			},
+			{
+				displayName: 'Options',
+				name: 'options',
+				type: 'collection',
+				placeholder: 'Add Option',
+				default: {},
+				options: [
+					{
+						displayName: 'Ignore SSL Issues',
+						name: 'allowUnauthorizedCerts',
+						type: 'boolean',
+						default: false,
+						description: 'Do connect even if SSL certificate validation is not possible.',
+					},
+				],
+			},
 		],
 	};
 
@@ -106,10 +130,12 @@ export class EmailSend implements INodeType {
 		const fromEmail = this.getNodeParameter('fromEmail') as string;
 		const toEmail = this.getNodeParameter('toEmail') as string;
 		const ccEmail = this.getNodeParameter('ccEmail') as string;
+		const bccEmail = this.getNodeParameter('bccEmail') as string;
 		const subject = this.getNodeParameter('subject') as string;
 		const text = this.getNodeParameter('text') as string;
 		const html = this.getNodeParameter('html') as string;
 		const attachmentPropertyString = this.getNodeParameter('attachments') as string;
+		const options = this.getNodeParameter('options', {}) as IDataObject;
 
 		const credentials = this.getCredentials('smtp');
 
@@ -117,22 +143,34 @@ export class EmailSend implements INodeType {
 			throw new Error('No credentials got returned!');
 		}
 
-		const transporter = createTransport({
-			// @ts-ignore
+		const connectionOptions: SMTPTransport.Options = {
 			host: credentials.host as string,
 			port: credentials.port as number,
 			secure: credentials.secure as boolean,
-			auth: {
+		};
+
+		if(credentials.user || credentials.password) {
+			// @ts-ignore
+			connectionOptions.auth = {
 				user: credentials.user,
-				pass: credentials.password,
-			}
-		});
+				pass: credentials.password
+			};
+		}
+
+		if (options.allowUnauthorizedCerts === true) {
+			connectionOptions.tls = {
+				rejectUnauthorized: false
+			};
+		}
+
+		const transporter = createTransport(connectionOptions);
 
 		// setup email data with unicode symbols
 		const mailOptions = {
 			from: fromEmail,
 			to: toEmail,
 			cc: ccEmail,
+			bcc: bccEmail,
 			subject,
 			text,
 			html,

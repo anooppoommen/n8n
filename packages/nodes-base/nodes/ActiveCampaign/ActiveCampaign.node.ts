@@ -1,23 +1,76 @@
 import {
 	IExecuteFunctions,
 } from 'n8n-core';
+
 import {
 	IDataObject,
 	INodeTypeDescription,
 	INodeExecutionData,
 	INodeType,
+	ILoadOptionsFunctions,
+	INodePropertyOptions,
 } from 'n8n-workflow';
 
 import {
 	activeCampaignApiRequest,
 	activeCampaignApiRequestAllItems,
+	IProduct,
 } from './GenericFunctions';
+
+import {
+	contactOperations,
+	contactFields
+} from './ContactDescription';
+
+import {
+	dealOperations,
+	dealFields
+} from './DealDescription';
+
+import {
+	ecomOrderOperations,
+	ecomOrderFields
+} from './EcomOrderDescription';
+
+import {
+	ecomCustomerOperations,
+	ecomCustomerFields
+} from './EcomCustomerDescription';
+
+import {
+	ecomOrderProductsOperations,
+	ecomOrderProductsFields
+} from './EcomOrderProductsDescription';
+
+import {
+	connectionOperations,
+	connectionFields
+} from './ConnectionDescription';
+
+import {
+	accountFields,
+	accountOperations
+} from "./AccountDescription";
+
+import {
+	tagFields,
+	tagOperations
+} from "./TagDescription";
+
+import {
+	accountContactFields,
+	accountContactOperations
+} from "./AccountContactDescription";
+
+import {
+	contactTagFields,
+	contactTagOperations,
+} from "./ContactTagDescription";
 
 interface CustomProperty {
 	name: string;
 	value: string;
 }
-
 
 /**
  * Add the additional fields to the body
@@ -31,6 +84,10 @@ function addAdditionalFields(body: IDataObject, additionalFields: IDataObject) {
 			for (const customProperty of (additionalFields.customProperties as IDataObject)!.property! as CustomProperty[]) {
 				body[customProperty.name] = customProperty.value;
 			}
+		} else if (key === 'fieldValues' && (additionalFields.fieldValues as IDataObject).property !== undefined) {
+			body.fieldValues = (additionalFields.fieldValues as IDataObject).property;
+		} else if (key === 'fields' && (additionalFields.fields as IDataObject).property !== undefined) {
+			body.fields = (additionalFields.fields as IDataObject).property;
 		} else {
 			body[key] = additionalFields[key];
 		}
@@ -56,383 +113,166 @@ export class ActiveCampaign implements INodeType {
 			{
 				name: 'activeCampaignApi',
 				required: true,
-			}
+			},
 		],
 		properties: [
+			// ----------------------------------
+			//         resources
+			// ----------------------------------
 			{
 				displayName: 'Resource',
 				name: 'resource',
 				type: 'options',
 				options: [
 					{
+						name: 'Account',
+						value: 'account',
+					},
+					{
+						name: 'Account Contact',
+						value: 'accountContact',
+					},
+					{
 						name: 'Contact',
 						value: 'contact',
+					},
+					{
+						name: 'Contact Tag',
+						value: 'contactTag',
+					},
+					{
+						name: 'Connection',
+						value: 'connection'
+					},
+					{
+						name: 'Deal',
+						value: 'deal',
+					},
+					{
+						name: 'E-commerce Order',
+						value: 'ecommerceOrder',
+					},
+					{
+						name: 'E-Commerce Customer',
+						value: 'ecommerceCustomer',
+					},
+					{
+						name: 'E-commerce Order Products',
+						value: 'ecommerceOrderProducts'
+					},
+					{
+						name: 'Tag',
+						value: 'tag',
 					},
 				],
 				default: 'contact',
 				description: 'The resource to operate on.',
 			},
 
-
-
 			// ----------------------------------
 			//         operations
 			// ----------------------------------
-			{
-				displayName: 'Operation',
-				name: 'operation',
-				type: 'options',
-				displayOptions: {
-					show: {
-						resource: [
-							'contact',
-						],
-					},
-				},
-				options: [
-					{
-						name: 'Create',
-						value: 'create',
-						description: 'Create a contact',
-					},
-					{
-						name: 'Delete',
-						value: 'delete',
-						description: 'Delete a contact',
-					},
-					{
-						name: 'Get',
-						value: 'get',
-						description: 'Get data of a contact',
-					},
-					{
-						name: 'Get All',
-						value: 'getAll',
-						description: 'Get data of all contact',
-					},
-					{
-						name: 'Update',
-						value: 'update',
-						description: 'Update a contact',
-					},
-				],
-				default: 'create',
-				description: 'The operation to perform.',
-			},
+			...accountOperations,
+			...contactOperations,
+			...accountContactOperations,
+			...contactTagOperations,
+			...tagOperations,
+			...dealOperations,
+			...connectionOperations,
+			...ecomOrderOperations,
+			...ecomCustomerOperations,
+			...ecomOrderProductsOperations,
 
+			// ----------------------------------
+			//         fields
+			// ----------------------------------
+			// ----------------------------------
+			//         tag
+			// ----------------------------------
+			...tagFields,
 
+			// ----------------------------------
+			//         tag
+			// ----------------------------------
+			...contactTagFields,
+
+			// ----------------------------------
+			//         account
+			// ----------------------------------
+			...accountFields,
+
+			// ----------------------------------
+			//         account
+			// ----------------------------------
+			...accountContactFields,
 
 			// ----------------------------------
 			//         contact
 			// ----------------------------------
+			...contactFields,
 
 			// ----------------------------------
-			//         contact:create
+			//         deal
 			// ----------------------------------
-			{
-				displayName: 'Email',
-				name: 'email',
-				type: 'string',
-				default: '',
-				required: true,
-				displayOptions: {
-					show: {
-						operation: [
-							'create',
-						],
-						resource: [
-							'contact',
-						],
-					},
-				},
-				description: 'The email of the contact to create',
-			},
-			{
-				displayName: 'Update if exists',
-				name: 'updateIfExists',
-				type: 'boolean',
-				displayOptions: {
-					show: {
-						operation: [
-							'create',
-						],
-						resource: [
-							'contact',
-						],
-					},
-				},
-				default: false,
-				description: 'Update user if it exists already. If not set and user exists it will error instead.',
-			},
-			{
-				displayName: 'Additional Fields',
-				name: 'additionalFields',
-				type: 'collection',
-				placeholder: 'Add Field',
-				displayOptions: {
-					show: {
-						operation: [
-							'create',
-						],
-						resource: [
-							'contact',
-						],
-					},
-				},
-				default: {},
-				options: [
-					{
-						displayName: 'First Name',
-						name: 'firstName',
-						type: 'string',
-						default: '',
-						description: 'The first name of the contact to create',
-					},
-					{
-						displayName: 'Last Name',
-						name: 'lastName',
-						type: 'string',
-						default: '',
-						description: 'The last name of the contact to create',
-					},
-					{
-						displayName: 'Phone',
-						name: 'phone',
-						type: 'string',
-						default: '',
-						description: 'Phone number of the contact.',
-					},
-					{
-						displayName: 'Custom Properties',
-						name: 'customProperties',
-						placeholder: 'Add Custom Property',
-						description: 'Adds a custom property to set also values which have not been predefined.',
-						type: 'fixedCollection',
-						typeOptions: {
-							multipleValues: true,
-						},
-						default: {},
-						options: [
-							{
-								name: 'property',
-								displayName: 'Property',
-								values: [
-									{
-										displayName: 'Property Name',
-										name: 'name',
-										type: 'string',
-										default: '',
-										description: 'Name of the property to set.',
-									},
-									{
-										displayName: 'Property Value',
-										name: 'value',
-										type: 'string',
-										default: '',
-										description: 'Value of the property to set.',
-									},
-								]
-							},
-						],
-					},
-				],
-			},
+			...dealFields,
 
 			// ----------------------------------
-			//         contact:delete
+			//         connection
 			// ----------------------------------
-			{
-				displayName: 'Contact ID',
-				name: 'contactId',
-				type: 'number',
-				displayOptions: {
-					show: {
-						operation: [
-							'delete',
-						],
-						resource: [
-							'contact',
-						],
-					},
-				},
-				default: 0,
-				required: true,
-				description: 'ID of the contact to delete.',
-			},
+			...connectionFields,
 
 			// ----------------------------------
-			//         person:get
+			//         ecommerceOrder
 			// ----------------------------------
-			{
-				displayName: 'Contact ID',
-				name: 'contactId',
-				type: 'number',
-				displayOptions: {
-					show: {
-						operation: [
-							'get',
-						],
-						resource: [
-							'contact',
-						],
-					},
-				},
-				default: 0,
-				required: true,
-				description: 'ID of the contact to get.',
-			},
+			...ecomOrderFields,
 
 			// ----------------------------------
-			//         contact:getAll
+			//         ecommerceCustomer
 			// ----------------------------------
-			{
-				displayName: 'Return All',
-				name: 'returnAll',
-				type: 'boolean',
-				displayOptions: {
-					show: {
-						operation: [
-							'getAll',
-						],
-						resource: [
-							'contact',
-						],
-					},
-				},
-				default: false,
-				description: 'If all results should be returned or only up to a given limit.',
-			},
-			{
-				displayName: 'Limit',
-				name: 'limit',
-				type: 'number',
-				displayOptions: {
-					show: {
-						operation: [
-							'getAll',
-						],
-						resource: [
-							'contact',
-						],
-						returnAll: [
-							false,
-						],
-					},
-				},
-				typeOptions: {
-					minValue: 1,
-					maxValue: 500,
-				},
-				default: 100,
-				description: 'How many results to return.',
-			},
+			...ecomCustomerFields,
 
 			// ----------------------------------
-			//         contact:update
+			//         ecommerceOrderProducts
 			// ----------------------------------
-			{
-				displayName: 'Contact ID',
-				name: 'contactId',
-				type: 'number',
-				displayOptions: {
-					show: {
-						operation: [
-							'update',
-						],
-						resource: [
-							'contact',
-						],
-					},
-				},
-				default: 0,
-				required: true,
-				description: 'ID of the contact to update.',
-			},
-			{
-				displayName: 'Update Fields',
-				name: 'updateFields',
-				type: 'collection',
-				description: 'The fields to update.',
-				placeholder: 'Add Field',
-				displayOptions: {
-					show: {
-						operation: [
-							'update',
-						],
-						resource: [
-							'contact',
-						],
-					},
-				},
-				default: {},
-				options: [
-					{
-						displayName: 'Email',
-						name: 'email',
-						type: 'string',
-						default: '',
-						description: 'Email of the contact.',
-					},
-					{
-						displayName: 'First Name',
-						name: 'firstName',
-						type: 'string',
-						default: '',
-						description: 'First name of the contact',
-					},
-					{
-						displayName: 'Last Name',
-						name: 'lastName',
-						type: 'string',
-						default: '',
-						description: 'Last name of the contact',
-					},
-					{
-						displayName: 'Phone',
-						name: 'phone',
-						type: 'string',
-						default: '',
-						description: 'Phone number of the contact.',
-					},
-					{
-						displayName: 'Custom Properties',
-						name: 'customProperties',
-						placeholder: 'Add Custom Property',
-						description: 'Adds a custom property to set also values which have not been predefined.',
-						type: 'fixedCollection',
-						typeOptions: {
-							multipleValues: true,
-						},
-						default: {},
-						options: [
-							{
-								name: 'property',
-								displayName: 'Property',
-								values: [
-									{
-										displayName: 'Property Name',
-										name: 'name',
-										type: 'string',
-										default: '',
-										description: 'Name of the property to set.',
-									},
-									{
-										displayName: 'Property Value',
-										name: 'value',
-										type: 'string',
-										default: '',
-										description: 'Value of the property to set.',
-									},
-								]
-							},
-						],
-					},
-				],
-			},
+			...ecomOrderProductsFields,
 
 		],
 	};
 
+	methods = {
+		loadOptions: {
+			// Get all the available custom fields to display them to user so that he can
+			// select them easily
+			async getContactCustomFields(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+				const returnData: INodePropertyOptions[] = [];
+				const { fields } = await activeCampaignApiRequest.call(this, 'GET', '/api/3/fields', {});
+				for (const field of fields) {
+					const fieldName = field.title;
+					const fieldId = field.id;
+					returnData.push({
+						name: fieldName,
+						value: fieldId,
+					});
+				}
+				return returnData;
+			},
+			// Get all the available custom fields to display them to user so that he can
+			// select them easily
+			async getAccountCustomFields(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+				const returnData: INodePropertyOptions[] = [];
+				const { accountCustomFieldMeta: fields } = await activeCampaignApiRequest.call(this, 'GET', '/api/3/accountCustomFieldMeta', {});
+				for (const field of fields) {
+					const fieldName = field.fieldLabel;
+					const fieldId = field.id;
+					returnData.push({
+						name: fieldName,
+						value: fieldId,
+					});
+				}
+				return returnData;
+			},
+		},
+	};
 
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const items = this.getInputData();
@@ -477,9 +317,11 @@ export class ActiveCampaign implements INodeType {
 					}
 
 					dataKey = 'contact';
+
 					body.contact = {
 						email: this.getNodeParameter('email', i) as string,
 					} as IDataObject;
+
 					const additionalFields = this.getNodeParameter('additionalFields', i) as IDataObject;
 					addAdditionalFields(body.contact as IDataObject, additionalFields);
 
@@ -505,17 +347,30 @@ export class ActiveCampaign implements INodeType {
 
 				} else if (operation === 'getAll') {
 					// ----------------------------------
-					//         persons:getAll
+					//         contacts:getAll
 					// ----------------------------------
 
 					requestMethod = 'GET';
 
 					returnAll = this.getNodeParameter('returnAll', i) as boolean;
+					const simple = this.getNodeParameter('simple', i, true) as boolean;
+					const additionalFields = this.getNodeParameter('additionalFields', i) as IDataObject;
+
 					if (returnAll === false) {
 						qs.limit = this.getNodeParameter('limit', i) as number;
 					}
 
-					dataKey = 'contacts';
+					Object.assign(qs, additionalFields);
+
+					if (qs.orderBy) {
+						qs[qs.orderBy as string] = true;
+						delete qs.orderBy;
+					}
+
+					if (simple === true) {
+						dataKey = 'contacts';
+					}
+
 					endpoint = `/api/3/contacts`;
 
 				} else if (operation === 'update') {
@@ -529,11 +384,684 @@ export class ActiveCampaign implements INodeType {
 					endpoint = `/api/3/contacts/${contactId}`;
 
 					dataKey = 'contact';
+
 					body.contact = {} as IDataObject;
+
 					const updateFields = this.getNodeParameter('updateFields', i) as IDataObject;
 					addAdditionalFields(body.contact as IDataObject, updateFields);
 
+				} else {
+					throw new Error(`The operation "${operation}" is not known`);
 				}
+			} else if (resource === 'account') {
+				if (operation === 'create') {
+					// ----------------------------------
+					//         account:create
+					// ----------------------------------
+
+					requestMethod = 'POST';
+
+					endpoint = '/api/3/accounts';
+
+					dataKey = 'account';
+
+					body.account = {
+						name: this.getNodeParameter('name', i) as string,
+					} as IDataObject;
+
+					const additionalFields = this.getNodeParameter('additionalFields', i) as IDataObject;
+					addAdditionalFields(body.account as IDataObject, additionalFields);
+
+				} else if (operation === 'delete') {
+					// ----------------------------------
+					//         account:delete
+					// ----------------------------------
+
+					requestMethod = 'DELETE';
+
+					const accountId = this.getNodeParameter('accountId', i) as number;
+					endpoint = `/api/3/accounts/${accountId}`;
+
+				} else if (operation === 'get') {
+					// ----------------------------------
+					//         account:get
+					// ----------------------------------
+
+					requestMethod = 'GET';
+
+					const accountId = this.getNodeParameter('accountId', i) as number;
+					endpoint = `/api/3/accounts/${accountId}`;
+
+				} else if (operation === 'getAll') {
+					// ----------------------------------
+					//         account:getAll
+					// ----------------------------------
+
+					requestMethod = 'GET';
+
+					const simple = this.getNodeParameter('simple', i, true) as boolean;
+					returnAll = this.getNodeParameter('returnAll', i) as boolean;
+					if (returnAll === false) {
+						qs.limit = this.getNodeParameter('limit', i) as number;
+					}
+
+					if (simple === true) {
+						dataKey = 'accounts';
+					}
+
+					endpoint = `/api/3/accounts`;
+
+					const filters = this.getNodeParameter('filters', i) as IDataObject;
+					Object.assign(qs, filters);
+
+				} else if (operation === 'update') {
+					// ----------------------------------
+					//         account:update
+					// ----------------------------------
+
+					requestMethod = 'PUT';
+
+					const accountId = this.getNodeParameter('accountId', i) as number;
+					endpoint = `/api/3/accounts/${accountId}`;
+
+					dataKey = 'account';
+
+					body.account = {} as IDataObject;
+
+					const updateFields = this.getNodeParameter('updateFields', i) as IDataObject;
+					addAdditionalFields(body.account as IDataObject, updateFields);
+
+				} else {
+					throw new Error(`The operation "${operation}" is not known`);
+				}
+			} else if (resource === 'accountContact') {
+				if (operation === 'create') {
+					// ----------------------------------
+					//         account:create
+					// ----------------------------------
+
+					requestMethod = 'POST';
+
+					endpoint = '/api/3/accountContacts';
+
+					dataKey = 'accountContact';
+
+					body.accountContact = {
+						contact: this.getNodeParameter('contact', i) as string,
+						account: this.getNodeParameter('account', i) as string,
+					} as IDataObject;
+
+					const additionalFields = this.getNodeParameter('additionalFields', i) as IDataObject;
+					addAdditionalFields(body.account as IDataObject, additionalFields);
+
+				} else if (operation === 'update') {
+					// ----------------------------------
+					//         accountContact:update
+					// ----------------------------------
+
+					requestMethod = 'PUT';
+
+					const accountContactId = this.getNodeParameter('accountContactId', i) as number;
+					endpoint = `/api/3/accountContacts/${accountContactId}`;
+
+					dataKey = 'accountContact';
+
+					body.accountContact = {} as IDataObject;
+
+					const updateFields = this.getNodeParameter('updateFields', i) as IDataObject;
+					addAdditionalFields(body.accountContact as IDataObject, updateFields);
+
+				} else if (operation === 'delete') {
+					// ----------------------------------
+					//         accountContact:delete
+					// ----------------------------------
+
+					requestMethod = 'DELETE';
+
+					const accountContactId = this.getNodeParameter('accountContactId', i) as number;
+					endpoint = `/api/3/accountContacts/${accountContactId}`;
+
+				} else {
+					throw new Error(`The operation "${operation}" is not known`);
+				}
+			} else if (resource === 'contactTag') {
+				if (operation === 'add') {
+					// ----------------------------------
+					//         contactTag:add
+					// ----------------------------------
+
+					requestMethod = 'POST';
+
+					endpoint = '/api/3/contactTags';
+
+					dataKey = 'contactTag';
+
+					body.contactTag = {
+						contact: this.getNodeParameter('contactId', i) as string,
+						tag: this.getNodeParameter('tagId', i) as string,
+					} as IDataObject;
+
+				} else if (operation === 'remove') {
+					// ----------------------------------
+					//         contactTag:remove
+					// ----------------------------------
+
+					requestMethod = 'DELETE';
+
+					const contactTagId = this.getNodeParameter('contactTagId', i) as number;
+					endpoint = `/api/3/contactTags/${contactTagId}`;
+
+				} else {
+					throw new Error(`The operation "${operation}" is not known`);
+				}
+			} else if (resource === 'tag') {
+				if (operation === 'create') {
+					// ----------------------------------
+					//         tag:create
+					// ----------------------------------
+
+					requestMethod = 'POST';
+
+					endpoint = '/api/3/tags';
+
+					dataKey = 'tag';
+
+					body.tag = {
+						tag: this.getNodeParameter('name', i) as string,
+						tagType: this.getNodeParameter('tagType', i) as string,
+					} as IDataObject;
+
+					const additionalFields = this.getNodeParameter('additionalFields', i) as IDataObject;
+					addAdditionalFields(body.tag as IDataObject, additionalFields);
+
+				} else if (operation === 'delete') {
+					// ----------------------------------
+					//         tag:delete
+					// ----------------------------------
+
+					requestMethod = 'DELETE';
+
+					const tagId = this.getNodeParameter('tagId', i) as number;
+					endpoint = `/api/3/tags/${tagId}`;
+
+				} else if (operation === 'get') {
+					// ----------------------------------
+					//         tag:get
+					// ----------------------------------
+
+					requestMethod = 'GET';
+
+					const tagId = this.getNodeParameter('tagId', i) as number;
+					endpoint = `/api/3/tags/${tagId}`;
+
+				} else if (operation === 'getAll') {
+					// ----------------------------------
+					//         tags:getAll
+					// ----------------------------------
+
+					requestMethod = 'GET';
+
+					const simple = this.getNodeParameter('simple', i, true) as boolean;
+					returnAll = this.getNodeParameter('returnAll', i) as boolean;
+					if (returnAll === false) {
+						qs.limit = this.getNodeParameter('limit', i) as number;
+					}
+
+					if (simple === true) {
+						dataKey = 'tags';
+					}
+
+					endpoint = `/api/3/tags`;
+
+				} else if (operation === 'update') {
+					// ----------------------------------
+					//         tags:update
+					// ----------------------------------
+
+					requestMethod = 'PUT';
+
+					const tagId = this.getNodeParameter('tagId', i) as number;
+					endpoint = `/api/3/tags/${tagId}`;
+
+					dataKey = 'tag';
+
+					body.tag = {} as IDataObject;
+
+					const updateFields = this.getNodeParameter('updateFields', i) as IDataObject;
+					addAdditionalFields(body.tag as IDataObject, updateFields);
+
+				} else {
+					throw new Error(`The operation "${operation}" is not known`);
+				}
+			} else if (resource === 'deal') {
+				if (operation === 'create') {
+					// ----------------------------------
+					//         deal:create
+					// ----------------------------------
+
+					requestMethod = 'POST';
+
+					endpoint = '/api/3/deals';
+
+					body.deal = {
+						title: this.getNodeParameter('title', i) as string,
+						contact: this.getNodeParameter('contact', i) as string,
+						value: this.getNodeParameter('value', i) as number,
+						currency: this.getNodeParameter('currency', i) as string,
+					} as IDataObject;
+
+					const group = this.getNodeParameter('group', i) as string;
+					if (group !== '') {
+						addAdditionalFields(body.deal as IDataObject, { group });
+					}
+
+					const owner = this.getNodeParameter('owner', i) as string;
+					if (owner !== '') {
+						addAdditionalFields(body.deal as IDataObject, { owner });
+					}
+
+					const stage = this.getNodeParameter('stage', i) as string;
+					if (stage !== '') {
+						addAdditionalFields(body.deal as IDataObject, { stage });
+					}
+
+					const additionalFields = this.getNodeParameter('additionalFields', i) as IDataObject;
+					addAdditionalFields(body.deal as IDataObject, additionalFields);
+
+				} else if (operation === 'update') {
+					// ----------------------------------
+					//         deal:update
+					// ----------------------------------
+
+					requestMethod = 'PUT';
+
+					const dealId = this.getNodeParameter('dealId', i) as number;
+					endpoint = `/api/3/deals/${dealId}`;
+
+					body.deal = {} as IDataObject;
+
+					const updateFields = this.getNodeParameter('updateFields', i) as IDataObject;
+					addAdditionalFields(body.deal as IDataObject, updateFields);
+
+				} else if (operation === 'delete') {
+					// ----------------------------------
+					//         deal:delete
+					// ----------------------------------
+
+					requestMethod = 'DELETE';
+
+					const dealId = this.getNodeParameter('dealId', i) as number;
+					endpoint = `/api/3/deals/${dealId}`;
+
+				} else if (operation === 'get') {
+					// ----------------------------------
+					//         deal:get
+					// ----------------------------------
+
+					requestMethod = 'GET';
+
+					const dealId = this.getNodeParameter('dealId', i) as number;
+					endpoint = `/api/3/deals/${dealId}`;
+
+				} else if (operation === 'getAll') {
+					// ----------------------------------
+					//         deals:getAll
+					// ----------------------------------
+
+					requestMethod = 'GET';
+
+					const simple = this.getNodeParameter('simple', i, true) as boolean;
+					returnAll = this.getNodeParameter('returnAll', i) as boolean;
+					if (returnAll === false) {
+						qs.limit = this.getNodeParameter('limit', i) as number;
+					}
+
+					if (simple === true) {
+						dataKey = 'deals';
+					}
+
+					endpoint = `/api/3/deals`;
+
+				} else if (operation === 'createNote') {
+					// ----------------------------------
+					//         deal:createNote
+					// ----------------------------------
+					requestMethod = 'POST';
+
+					body.note = {
+						note: this.getNodeParameter('dealNote', i) as string,
+					} as IDataObject;
+
+					const dealId = this.getNodeParameter('dealId', i) as number;
+					endpoint = `/api/3/deals/${dealId}/notes`;
+
+				} else if (operation === 'updateNote') {
+					// ----------------------------------
+					//         deal:updateNote
+					// ----------------------------------
+					requestMethod = 'PUT';
+
+					body.note = {
+						note: this.getNodeParameter('dealNote', i) as string,
+					} as IDataObject;
+
+					const dealId = this.getNodeParameter('dealId', i) as number;
+					const dealNoteId = this.getNodeParameter('dealNoteId', i) as number;
+					endpoint = `/api/3/deals/${dealId}/notes/${dealNoteId}`;
+
+				} else {
+					throw new Error(`The operation "${operation}" is not known`);
+				}
+			} else if (resource === 'connection') {
+				if (operation === 'create') {
+					// ----------------------------------
+					//         connection:create
+					// ----------------------------------
+
+					requestMethod = 'POST';
+
+					endpoint = '/api/3/connections';
+
+					body.connection = {
+						service: this.getNodeParameter('service', i) as string,
+						externalid: this.getNodeParameter('externalid', i) as string,
+						name: this.getNodeParameter('name', i) as string,
+						logoUrl: this.getNodeParameter('logoUrl', i) as string,
+						linkUrl: this.getNodeParameter('linkUrl', i) as string,
+					} as IDataObject;
+
+				} else if (operation === 'update') {
+					// ----------------------------------
+					//         connection:update
+					// ----------------------------------
+
+					requestMethod = 'PUT';
+
+					const connectionId = this.getNodeParameter('connectionId', i) as number;
+					endpoint = `/api/3/connections/${connectionId}`;
+
+					body.connection = {} as IDataObject;
+
+					const updateFields = this.getNodeParameter('updateFields', i) as IDataObject;
+					addAdditionalFields(body.connection as IDataObject, updateFields);
+
+				} else if (operation === 'delete') {
+					// ----------------------------------
+					//         connection:delete
+					// ----------------------------------
+
+					requestMethod = 'DELETE';
+
+					const connectionId = this.getNodeParameter('connectionId', i) as number;
+					endpoint = `/api/3/connections/${connectionId}`;
+
+				} else if (operation === 'get') {
+					// ----------------------------------
+					//         connection:get
+					// ----------------------------------
+
+					requestMethod = 'GET';
+
+					const connectionId = this.getNodeParameter('connectionId', i) as number;
+					endpoint = `/api/3/connections/${connectionId}`;
+
+				} else if (operation === 'getAll') {
+					// ----------------------------------
+					//         connections:getAll
+					// ----------------------------------
+
+					requestMethod = 'GET';
+
+					const simple = this.getNodeParameter('simple', i, true) as boolean;
+					returnAll = this.getNodeParameter('returnAll', i) as boolean;
+					if (returnAll === false) {
+						qs.limit = this.getNodeParameter('limit', i) as number;
+					}
+
+					if (simple === true) {
+						dataKey = 'connections';
+					}
+
+					endpoint = `/api/3/connections`;
+
+				} else {
+					throw new Error(`The operation "${operation}" is not known`);
+				}
+			} else if (resource === 'ecommerceOrder') {
+				if (operation === 'create') {
+					// ----------------------------------
+					//         ecommerceOrder:create
+					// ----------------------------------
+
+					requestMethod = 'POST';
+
+					endpoint = '/api/3/ecomOrders';
+
+					body.ecomOrder = {
+						source: this.getNodeParameter('source', i) as string,
+						email: this.getNodeParameter('email', i) as string,
+						totalPrice: this.getNodeParameter('totalPrice', i) as number,
+						currency: this.getNodeParameter('currency', i).toString().toUpperCase() as string,
+						externalCreatedDate: this.getNodeParameter('externalCreatedDate', i) as string,
+						connectionid: this.getNodeParameter('connectionid', i) as number,
+						customerid: this.getNodeParameter('customerid', i) as number,
+					} as IDataObject;
+
+					const externalid = this.getNodeParameter('externalid', i) as string;
+					if (externalid !== '') {
+						addAdditionalFields(body.ecomOrder as IDataObject, { externalid });
+					}
+
+					const externalcheckoutid = this.getNodeParameter('externalcheckoutid', i) as string;
+					if (externalcheckoutid !== '') {
+						addAdditionalFields(body.ecomOrder as IDataObject, { externalcheckoutid });
+					}
+
+					const abandonedDate = this.getNodeParameter('abandonedDate', i) as string;
+					if (abandonedDate !== '') {
+						addAdditionalFields(body.ecomOrder as IDataObject, { abandonedDate });
+					}
+
+					const orderProducts = this.getNodeParameter('orderProducts', i) as unknown as IProduct[];
+					addAdditionalFields(body.ecomOrder as IDataObject, { orderProducts });
+
+					const additionalFields = this.getNodeParameter('additionalFields', i) as IDataObject;
+					addAdditionalFields(body.ecomOrder as IDataObject, additionalFields);
+
+				} else if (operation === 'update') {
+					// ----------------------------------
+					//         ecommerceOrder:update
+					// ----------------------------------
+
+					requestMethod = 'PUT';
+
+					const orderId = this.getNodeParameter('orderId', i) as number;
+					endpoint = `/api/3/ecomOrders/${orderId}`;
+
+					body.ecomOrder = {} as IDataObject;
+
+					const updateFields = this.getNodeParameter('updateFields', i) as IDataObject;
+					addAdditionalFields(body.ecomOrder as IDataObject, updateFields);
+
+				} else if (operation === 'delete') {
+					// ----------------------------------
+					//         ecommerceOrder:delete
+					// ----------------------------------
+
+					requestMethod = 'DELETE';
+
+					const orderId = this.getNodeParameter('orderId', i) as number;
+					endpoint = `/api/3/ecomOrders/${orderId}`;
+
+				} else if (operation === 'get') {
+					// ----------------------------------
+					//         ecommerceOrder:get
+					// ----------------------------------
+
+					requestMethod = 'GET';
+
+					const orderId = this.getNodeParameter('orderId', i) as number;
+					endpoint = `/api/3/ecomOrders/${orderId}`;
+
+				} else if (operation === 'getAll') {
+					// ----------------------------------
+					//         ecommerceOrders:getAll
+					// ----------------------------------
+
+					requestMethod = 'GET';
+
+					const simple = this.getNodeParameter('simple', i, true) as boolean;
+					returnAll = this.getNodeParameter('returnAll', i) as boolean;
+					if (returnAll === false) {
+						qs.limit = this.getNodeParameter('limit', i) as number;
+					}
+
+					if (simple === true) {
+						dataKey = 'ecomOrders';
+					}
+
+					endpoint = `/api/3/ecomOrders`;
+
+				} else {
+					throw new Error(`The operation "${operation}" is not known`);
+				}
+			} else if (resource === 'ecommerceCustomer') {
+				if (operation === 'create') {
+					// ----------------------------------
+					//         ecommerceCustomer:create
+					// ----------------------------------
+
+					requestMethod = 'POST';
+
+					endpoint = '/api/3/ecomCustomers';
+
+					body.ecomCustomer = {
+						connectionid: this.getNodeParameter('connectionid', i) as string,
+						externalid: this.getNodeParameter('externalid', i) as string,
+						email: this.getNodeParameter('email', i) as string,
+					} as IDataObject;
+
+					const additionalFields = this.getNodeParameter('additionalFields', i) as IDataObject;
+					if (additionalFields.acceptsMarketing !== undefined) {
+						if (additionalFields.acceptsMarketing === true) {
+							additionalFields.acceptsMarketing = '1';
+						} else {
+							additionalFields.acceptsMarketing = '0';
+						}
+					}
+					addAdditionalFields(body.ecomCustomer as IDataObject, additionalFields);
+
+				} else if (operation === 'update') {
+					// ----------------------------------
+					//         ecommerceCustomer:update
+					// ----------------------------------
+
+					requestMethod = 'PUT';
+
+					const ecommerceCustomerId = this.getNodeParameter('ecommerceCustomerId', i) as number;
+					endpoint = `/api/3/ecomCustomers/${ecommerceCustomerId}`;
+
+					body.ecomCustomer = {} as IDataObject;
+
+					const updateFields = this.getNodeParameter('updateFields', i) as IDataObject;
+					if (updateFields.acceptsMarketing !== undefined) {
+						if (updateFields.acceptsMarketing === true) {
+							updateFields.acceptsMarketing = '1';
+						} else {
+							updateFields.acceptsMarketing = '0';
+						}
+					}
+					addAdditionalFields(body.ecomCustomer as IDataObject, updateFields);
+
+				} else if (operation === 'delete') {
+					// ----------------------------------
+					//         ecommerceCustomer:delete
+					// ----------------------------------
+
+					requestMethod = 'DELETE';
+
+					const ecommerceCustomerId = this.getNodeParameter('ecommerceCustomerId', i) as number;
+					endpoint = `/api/3/ecomCustomers/${ecommerceCustomerId}`;
+
+				} else if (operation === 'get') {
+					// ----------------------------------
+					//         ecommerceCustomer:get
+					// ----------------------------------
+
+					requestMethod = 'GET';
+
+					const ecommerceCustomerId = this.getNodeParameter('ecommerceCustomerId', i) as number;
+					endpoint = `/api/3/ecomCustomers/${ecommerceCustomerId}`;
+
+				} else if (operation === 'getAll') {
+					// ----------------------------------
+					//         ecommerceCustomers:getAll
+					// ----------------------------------
+
+					requestMethod = 'GET';
+
+					const simple = this.getNodeParameter('simple', i, true) as boolean;
+					returnAll = this.getNodeParameter('returnAll', i) as boolean;
+					if (returnAll === false) {
+						qs.limit = this.getNodeParameter('limit', i) as number;
+					}
+
+					if (simple === true) {
+						dataKey = 'ecomCustomers';
+					}
+
+					endpoint = `/api/3/ecomCustomers`;
+
+				} else {
+					throw new Error(`The operation "${operation}" is not known`);
+				}
+			} else if (resource === 'ecommerceOrderProducts') {
+				if (operation === 'getByProductId') {
+					// ----------------------------------
+					//         ecommerceOrderProducts:getByProductId
+					// ----------------------------------
+
+					requestMethod = 'GET';
+
+					const procuctId = this.getNodeParameter('procuctId', i) as number;
+					endpoint = `/api/3/ecomOrderProducts/${procuctId}`;
+
+
+				} else if (operation === 'getByOrderId') {
+					// ----------------------------------
+					//         ecommerceOrderProducts:getByOrderId
+					// ----------------------------------
+
+					requestMethod = 'GET';
+
+					//dataKey = 'ecomOrderProducts';
+
+					const orderId = this.getNodeParameter('orderId', i) as number;
+					endpoint = `/api/3/ecomOrders/${orderId}/orderProducts`;
+
+				} else if (operation === 'getAll') {
+					// ----------------------------------
+					//         ecommerceOrderProductss:getAll
+					// ----------------------------------
+
+					requestMethod = 'GET';
+
+					const simple = this.getNodeParameter('simple', i, true) as boolean;
+					returnAll = this.getNodeParameter('returnAll', i) as boolean;
+					if (returnAll === false) {
+						qs.limit = this.getNodeParameter('limit', i) as number;
+					}
+
+					if (simple === true) {
+						dataKey = 'ecomOrderProducts';
+					}
+
+					endpoint = `/api/3/ecomOrderProducts`;
+
+				} else {
+					throw new Error(`The operation "${operation}" is not known`);
+				}
+
 			} else {
 				throw new Error(`The resource "${resource}" is not known!`);
 			}

@@ -33,13 +33,16 @@ import {
 	faCogs,
 	faClone,
 	faCloud,
+	faCloudDownloadAlt,
 	faCopy,
+	faCut,
 	faDotCircle,
 	faEdit,
 	faEnvelope,
 	faEye,
 	faExclamationTriangle,
 	faExternalLinkAlt,
+	faExchangeAlt,
 	faFile,
 	faFileCode,
 	faFileDownload,
@@ -68,6 +71,8 @@ import {
 	faSave,
 	faSearchMinus,
 	faSearchPlus,
+	faServer,
+	faSignInAlt,
 	faSlidersH,
 	faSpinner,
 	faStop,
@@ -104,13 +109,16 @@ library.add(faCog);
 library.add(faCogs);
 library.add(faClone);
 library.add(faCloud);
+library.add(faCloudDownloadAlt);
 library.add(faCopy);
+library.add(faCut);
 library.add(faDotCircle);
 library.add(faEdit);
 library.add(faEnvelope);
 library.add(faEye);
 library.add(faExclamationTriangle);
 library.add(faExternalLinkAlt);
+library.add(faExchangeAlt);
 library.add(faFile);
 library.add(faFileCode);
 library.add(faFileDownload);
@@ -139,6 +147,8 @@ library.add(faRss);
 library.add(faSave);
 library.add(faSearchMinus);
 library.add(faSearchPlus);
+library.add(faServer);
+library.add(faSignInAlt);
 library.add(faSlidersH);
 library.add(faSpinner);
 library.add(faStop);
@@ -173,7 +183,7 @@ if (process.env.NODE_ENV !== 'production') {
 			// not do anything about it anyway
 			return;
 		}
-		console.error('error cought in main.ts'); // eslint-disable-line no-console
+		console.error('error caught in main.ts'); // eslint-disable-line no-console
 		console.error(message); // eslint-disable-line no-console
 		console.error(error); // eslint-disable-line no-console
 	};

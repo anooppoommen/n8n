@@ -1,16 +1,16 @@
 import {
-	IConnections,
+	ICredentialDataDecryptedObject,
 	ICredentialsDecrypted,
 	ICredentialsEncrypted,
+	ICredentialType,
 	IDataObject,
 	IExecutionError,
-	INode,
 	IRun,
 	IRunData,
 	IRunExecutionData,
 	ITaskData,
+	IWorkflowBase as IWorkflowBaseWorkflow,
 	IWorkflowCredentials,
-	IWorkflowSettings,
 	WorkflowExecuteMode,
 } from 'n8n-workflow';
 
@@ -19,6 +19,7 @@ import {
 } from 'n8n-core';
 
 
+import * as PCancelable from 'p-cancelable';
 import { ObjectID, Repository } from 'typeorm';
 
 import { ChildProcess } from 'child_process';
@@ -36,24 +37,31 @@ export interface ICustomRequest extends Request {
 	parsedUrl: Url | undefined;
 }
 
+export interface ICredentialsTypeData {
+	[key: string]: ICredentialType;
+}
+
+export interface ICredentialsOverwrite {
+	[key: string]: ICredentialDataDecryptedObject;
+}
 
 export interface IDatabaseCollections {
 	Credentials: Repository<ICredentialsDb> | null;
 	Execution: Repository<IExecutionFlattedDb> | null;
 	Workflow: Repository<IWorkflowDb> | null;
+	Webhook: Repository<IWebhookDb> | null;
 }
 
+export interface IWebhookDb {
+	workflowId: number | string | ObjectID;
+	webhookPath: string;
+	method: string;
+	node: string;
+}
 
-export interface IWorkflowBase {
+export interface IWorkflowBase extends IWorkflowBaseWorkflow {
 	id?: number | string | ObjectID;
-	name: string;
-	active: boolean;
-	createdAt: Date;
-	updatedAt: Date;
-	nodes: INode[];
-	connections: IConnections;
-	settings?: IWorkflowSettings;
-	staticData?: IDataObject;
+
 }
 
 
@@ -79,7 +87,7 @@ export interface ICredentialsBase {
 	updatedAt: Date;
 }
 
-export interface ICredentialsDb extends ICredentialsBase, ICredentialsEncrypted{
+export interface ICredentialsDb extends ICredentialsBase, ICredentialsEncrypted {
 	id: number | string | ObjectID;
 }
 
@@ -95,7 +103,7 @@ export interface ICredentialsDecryptedResponse extends ICredentialsDecryptedDb {
 	id: string;
 }
 
-export type DatabaseType = 'mongodb' | 'postgresdb' | 'sqlite';
+export type DatabaseType = 'mariadb' | 'mongodb' | 'postgresdb' | 'mysqldb' | 'sqlite';
 export type SaveExecutionDataType = 'all' | 'none';
 
 export interface IExecutionBase {
@@ -190,9 +198,34 @@ export interface IExecutionDeleteFilter {
 
 export interface IExecutingWorkflowData {
 	executionData: IWorkflowExecutionDataProcess;
-	process: ChildProcess;
+	process?: ChildProcess;
 	startedAt: Date;
 	postExecutePromises: Array<IDeferredPromise<IRun | undefined>>;
+	workflowExecution?: PCancelable<IRun>;
+}
+
+export interface IExternalHooks {
+	credentials?: {
+		create?: Array<{ (this: IExternalHooksFunctions, credentialsData: ICredentialsEncrypted): Promise<void>; }>
+		delete?: Array<{ (this: IExternalHooksFunctions, credentialId: string): Promise<void>; }>
+		update?: Array<{ (this: IExternalHooksFunctions, credentialsData: ICredentialsDb): Promise<void>; }>
+	};
+	workflow?: {
+		activate?: Array<{ (this: IExternalHooksFunctions, workflowData: IWorkflowDb): Promise<void>; }>
+		create?: Array<{ (this: IExternalHooksFunctions, workflowData: IWorkflowBase): Promise<void>; }>
+		delete?: Array<{ (this: IExternalHooksFunctions, workflowId: string): Promise<void>; }>
+		execute?: Array<{ (this: IExternalHooksFunctions, workflowData: IWorkflowDb, mode: WorkflowExecuteMode): Promise<void>; }>
+		update?: Array<{ (this: IExternalHooksFunctions, workflowData: IWorkflowDb): Promise<void>; }>
+	};
+}
+
+export interface IExternalHooksFunctions {
+	dbCollections: IDatabaseCollections;
+}
+
+export interface IExternalHooksClass {
+	init(): Promise<void>;
+	run(hookName: string, hookParameters?: any[]): Promise<void>; // tslint:disable-line:no-any
 }
 
 export interface IN8nConfig {
@@ -253,16 +286,16 @@ export interface IN8nUISettings {
 	saveDataErrorExecution: string;
 	saveDataSuccessExecution: string;
 	saveManualExecutions: boolean;
+	executionTimeout: number;
+	maxExecutionTimeout: number;
 	timezone: string;
 	urlBaseWebhook: string;
 	versionCli: string;
 }
 
-
 export interface IPackageVersions {
 	cli: string;
 }
-
 
 export interface IPushData {
 	data: IPushDataExecutionFinished | IPushDataNodeExecuteAfter | IPushDataNodeExecuteBefore | IPushDataTestWebhook;
@@ -270,7 +303,6 @@ export interface IPushData {
 }
 
 export type IPushDataType = 'executionFinished' | 'executionStarted' | 'nodeExecuteAfter' | 'nodeExecuteBefore' | 'testWebhookDeleted' | 'testWebhookReceived';
-
 
 export interface IPushDataExecutionFinished {
 	data: IRun;
@@ -353,7 +385,10 @@ export interface IWorkflowExecutionDataProcess {
 	workflowData: IWorkflowBase;
 }
 
+
 export interface IWorkflowExecutionDataProcessWithExecution extends IWorkflowExecutionDataProcess {
+	credentialsOverwrite: ICredentialsOverwrite;
+	credentialsTypeData: ICredentialsTypeData;
 	executionId: string;
 	nodeTypeData: ITransferNodeTypes;
 }

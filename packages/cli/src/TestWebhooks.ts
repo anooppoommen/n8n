@@ -2,10 +2,10 @@ import * as express from 'express';
 
 import {
 	IResponseCallbackData,
+	IWorkflowDb,
 	Push,
 	ResponseHelper,
 	WebhookHelpers,
-	IWorkflowDb,
 } from './';
 
 import {
@@ -29,6 +29,7 @@ export class TestWebhooks {
 			sessionId?: string;
 			timeout: NodeJS.Timeout,
 			workflowData: IWorkflowDb;
+			workflow: Workflow;
 		};
 	} = {};
 	private activeWebhooks: ActiveWebhooks | null = null;
@@ -56,24 +57,31 @@ export class TestWebhooks {
 		const webhookData: IWebhookData | undefined = this.activeWebhooks!.get(httpMethod, path);
 
 		if (webhookData === undefined) {
-			// The requested webhook is not registred
-			throw new ResponseHelper.ResponseError('The requested webhook is not registred.', 404, 404);
-		}
-
-		// Get the node which has the webhook defined to know where to start from and to
-		// get additional data
-		const workflowStartNode = webhookData.workflow.getNode(webhookData.node);
-		if (workflowStartNode === null) {
-			throw new ResponseHelper.ResponseError('Could not find node to process webhook.', 404, 404);
+			// The requested webhook is not registered
+			throw new ResponseHelper.ResponseError(`The requested webhook "${httpMethod} ${path}" is not registered.`, 404, 404);
 		}
 
 		const webhookKey = this.activeWebhooks!.getWebhookKey(webhookData.httpMethod, webhookData.path);
 
+		// TODO: Clean that duplication up one day and improve code generally
+		if (this.testWebhookData[webhookKey] === undefined) {
+			// The requested webhook is not registered
+			throw new ResponseHelper.ResponseError(`The requested webhook "${httpMethod} ${path}" is not registered.`, 404, 404);
+		}
+
+		const workflow = this.testWebhookData[webhookKey].workflow;
+
+		// Get the node which has the webhook defined to know where to start from and to
+		// get additional data
+		const workflowStartNode = workflow.getNode(webhookData.node);
+		if (workflowStartNode === null) {
+			throw new ResponseHelper.ResponseError('Could not find node to process webhook.', 404, 404);
+		}
+
 		return new Promise(async (resolve, reject) => {
 			try {
 				const executionMode = 'manual';
-
-				const executionId = await WebhookHelpers.executeWebhook(webhookData, this.testWebhookData[webhookKey].workflowData, workflowStartNode, executionMode, this.testWebhookData[webhookKey].sessionId, request, response, (error: Error | null, data: IResponseCallbackData) => {
+				const executionId = await WebhookHelpers.executeWebhook(workflow, webhookData, this.testWebhookData[webhookKey].workflowData, workflowStartNode, executionMode, this.testWebhookData[webhookKey].sessionId, request, response, (error: Error | null, data: IResponseCallbackData) => {
 					if (error !== null) {
 						return reject(error);
 					}
@@ -90,7 +98,7 @@ export class TestWebhooks {
 				// Inform editor-ui that webhook got received
 				if (this.testWebhookData[webhookKey].sessionId !== undefined) {
 					const pushInstance = Push.getInstance();
-					pushInstance.send('testWebhookReceived', { workflowId: webhookData.workflow.id, executionId }, this.testWebhookData[webhookKey].sessionId!);
+					pushInstance.send('testWebhookReceived', { workflowId: webhookData.workflowId, executionId }, this.testWebhookData[webhookKey].sessionId!);
 				}
 
 			} catch (error) {
@@ -100,8 +108,23 @@ export class TestWebhooks {
 			// Remove the webhook
 			clearTimeout(this.testWebhookData[webhookKey].timeout);
 			delete this.testWebhookData[webhookKey];
-			this.activeWebhooks!.removeByWorkflowId(webhookData.workflow.id!.toString());
+			this.activeWebhooks!.removeWorkflow(workflow);
 		});
+	}
+
+	/**
+	 * Gets all request methods associated with a single test webhook
+	 * @param path webhook path
+	 */
+	async getWebhookMethods(path : string) : Promise<string[]> {
+		const webhookMethods: string[] = this.activeWebhooks!.getWebhookMethods(path);
+
+		if (webhookMethods === undefined) {
+			// The requested webhook is not registered
+			throw new ResponseHelper.ResponseError(`The requested webhook "${path}" is not registered.`, 404, 404);
+		}
+
+		return webhookMethods;
 	}
 
 
@@ -123,6 +146,10 @@ export class TestWebhooks {
 			return false;
 		}
 
+		if (workflow.id === undefined) {
+			throw new Error('Webhooks can only be added for saved workflows as an id is needed!');
+		}
+
 		// Remove test-webhooks automatically if they do not get called (after 120 seconds)
 		const timeout = setTimeout(() => {
 			this.cancelTestWebhook(workflowData.id.toString());
@@ -131,12 +158,15 @@ export class TestWebhooks {
 		let key: string;
 		for (const webhookData of webhooks) {
 			key = this.activeWebhooks!.getWebhookKey(webhookData.httpMethod, webhookData.path);
+
 			this.testWebhookData[key] = {
 				sessionId,
 				timeout,
+				workflow,
 				workflowData,
 			};
-			await this.activeWebhooks!.add(webhookData, mode);
+
+			await this.activeWebhooks!.add(workflow, webhookData, mode);
 		}
 
 		return true;
@@ -173,9 +203,11 @@ export class TestWebhooks {
 				}
 			}
 
+			const workflow = this.testWebhookData[webhookKey].workflow;
+
 			// Remove the webhook
 			delete this.testWebhookData[webhookKey];
-			this.activeWebhooks!.removeByWorkflowId(workflowId);
+			this.activeWebhooks!.removeWorkflow(workflow);
 		}
 
 		return foundWebhook;
@@ -190,12 +222,16 @@ export class TestWebhooks {
 			return;
 		}
 
-		return this.activeWebhooks.removeAll();
+		let workflow: Workflow;
+		const workflows: Workflow[] = [];
+		for (const webhookKey of Object.keys(this.testWebhookData)) {
+			workflow = this.testWebhookData[webhookKey].workflow;
+			workflows.push(workflow);
+		}
+
+		return this.activeWebhooks.removeAll(workflows);
 	}
-
 }
-
-
 
 let testWebhooksInstance: TestWebhooks | undefined;
 

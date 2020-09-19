@@ -123,8 +123,8 @@ export default mixins(
 			},
 			getArgument (
 				argumentName: string,
-				parameter: INodeProperties
-			): string | number | boolean | undefined {
+				parameter: INodeProperties,
+			): string | string[] | number | boolean | undefined{
 				if (parameter.typeOptions === undefined) {
 					return undefined;
 				}
@@ -149,6 +149,10 @@ export default mixins(
 				this.$emit('valueChanged', parameterData);
 			},
 			displayNodeParameter (parameter: INodeProperties): boolean {
+				if (parameter.type === 'hidden') {
+					return false;
+				}
+
 				if (parameter.displayOptions === undefined) {
 					// If it is not defined no need to do a proper check
 					return true;

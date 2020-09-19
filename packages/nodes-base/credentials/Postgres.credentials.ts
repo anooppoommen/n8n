@@ -7,6 +7,7 @@ import {
 export class Postgres implements ICredentialType {
 	name = 'postgres';
 	displayName = 'Postgres';
+	documentationUrl = 'postgres';
 	properties = [
 		{
 			displayName: 'Host',
@@ -34,6 +35,48 @@ export class Postgres implements ICredentialType {
 				password: true,
 			},
 			default: '',
+		},
+		{
+			displayName: 'Ignore SSL Issues',
+			name: 'allowUnauthorizedCerts',
+			type: 'boolean' as NodePropertyTypes,
+			default: false,
+			description: 'Connect even if SSL certificate validation is not possible.',
+		},
+		{
+			displayName: 'SSL',
+			name: 'ssl',
+			type: 'options' as NodePropertyTypes,
+			displayOptions: {
+				show: {
+					allowUnauthorizedCerts: [
+						false,
+					],
+				},
+			},
+			options: [
+				{
+					name: 'disable',
+					value: 'disable',
+				},
+				{
+					name: 'allow',
+					value: 'allow',
+				},
+				{
+					name: 'require',
+					value: 'require',
+				},
+				{
+					name: 'verify (not implemented)',
+					value: 'verify',
+				},
+				{
+					name: 'verify-full (not implemented)',
+					value: 'verify-full',
+				}
+			],
+			default: 'disable',
 		},
 		{
 			displayName: 'Port',

@@ -20,6 +20,7 @@
 				:id="'node-' + getNodeIndex(nodeData.name)"
 				:key="getNodeIndex(nodeData.name)"
 				:name="nodeData.name"
+				:isReadOnly="isReadOnly"
 				:instance="instance"
 				></node>
 			</div>
@@ -102,6 +103,10 @@
 
 <script lang="ts">
 import Vue from 'vue';
+import {
+	OverlaySpec,
+} from 'jsplumb';
+import { MessageBoxInputData } from 'element-ui/types/message-box';
 import { jsPlumb, Endpoint, OnConnectionBindInfo } from 'jsplumb';
 import { NODE_NAME_PREFIX, PLACEHOLDER_EMPTY_WORKFLOW_ID } from '@/constants';
 import { copyPaste } from '@/components/mixins/copyPaste';
@@ -110,6 +115,8 @@ import { mouseSelect } from '@/components/mixins/mouseSelect';
 import { moveNodeWorkflow } from '@/components/mixins/moveNodeWorkflow';
 import { restApi } from '@/components/mixins/restApi';
 import { showMessage } from '@/components/mixins/showMessage';
+import { titleChange } from '@/components/mixins/titleChange';
+
 import { workflowHelpers } from '@/components/mixins/workflowHelpers';
 import { workflowRun } from '@/components/mixins/workflowRun';
 
@@ -120,6 +127,8 @@ import NodeSettings from '@/components/NodeSettings.vue';
 import RunData from '@/components/RunData.vue';
 
 import mixins from 'vue-typed-mixins';
+
+import { v4 as uuidv4 } from 'uuid';
 
 import { debounce } from 'lodash';
 import axios from 'axios';
@@ -158,6 +167,7 @@ export default mixins(
 	moveNodeWorkflow,
 	restApi,
 	showMessage,
+	titleChange,
 	workflowHelpers,
 	workflowRun,
 )
@@ -375,7 +385,7 @@ export default mixins(
 					this.createNodeActive = false;
 					this.$store.commit('setActiveNode', null);
 				} else if (e.key === 'Tab') {
-					this.createNodeActive = !this.createNodeActive;
+					this.createNodeActive = !this.createNodeActive && !this.isReadOnly;
 				} else if (e.key === this.controlKeyCode) {
 					this.ctrlKeyPressed = true;
 				} else if (e.key === 'F2') {
@@ -546,19 +556,7 @@ export default mixins(
 				if (this.editAllowedCheck() === false) {
 					return;
 				}
-
-				let updateInformation;
-				this.$store.getters.getSelectedNodes.forEach((node: INodeUi) => {
-					// Toggle disabled flag
-					updateInformation = {
-						name: node.name,
-						properties: {
-							disabled: !node.disabled,
-						},
-					};
-
-					this.$store.commit('updateNodeProperties', updateInformation);
-				});
+				this.disableNodes(this.$store.getters.getSelectedNodes);
 			},
 
 			deleteSelectedNodes () {
@@ -806,6 +804,7 @@ export default mixins(
 				}
 
 				this.$store.commit('setLastSelectedNode', node.name);
+				this.$store.commit('setLastSelectedNodeOutputIndex', null);
 
 				if (setActive === true) {
 					this.$store.commit('setActiveNode', node.name);
@@ -936,12 +935,13 @@ export default mixins(
 
 				// Check if there is a last selected node
 				const lastSelectedNode = this.$store.getters.lastSelectedNode;
+				const lastSelectedNodeOutputIndex = this.$store.getters.lastSelectedNodeOutputIndex;
 				if (lastSelectedNode) {
 					// If a node is active then add the new node directly after the current one
 					// newNodeData.position = [activeNode.position[0], activeNode.position[1] + 60];
 					newNodeData.position = this.getNewNodePosition(
-						[lastSelectedNode.position[0] + 150, lastSelectedNode.position[1]],
-						[100, 0]
+						[lastSelectedNode.position[0] + 200, lastSelectedNode.position[1]],
+						[100, 0],
 					);
 				} else {
 					// If no node is active find a free spot
@@ -950,6 +950,10 @@ export default mixins(
 
 				// Check if node-name is unique else find one that is
 				newNodeData.name = this.getUniqueNodeName(newNodeData.name);
+
+				if (nodeTypeData.webhooks && nodeTypeData.webhooks.length) {
+					newNodeData.webhookId = uuidv4();
+				}
 
 				await this.addNodes([newNodeData]);
 
@@ -960,26 +964,28 @@ export default mixins(
 					this.nodeSelectedByName(newNodeData.name, true);
 				});
 
+				const outputIndex = lastSelectedNodeOutputIndex || 0;
+
 				if (lastSelectedNode) {
 					// If a node is last selected then connect between the active and its child ones
 					await Vue.nextTick();
 
 					// Add connections of active node to newly created one
 					let connections = this.$store.getters.connectionsByNodeName(
-						lastSelectedNode.name
+						lastSelectedNode.name,
 					);
 					connections = JSON.parse(JSON.stringify(connections));
 
 					for (const type of Object.keys(connections)) {
-						for (let inputIndex = 0; inputIndex < connections[type].length; inputIndex++) {
-							connections[type][inputIndex].forEach((connectionInfo: IConnection) => {
+						if (outputIndex <= connections[type].length) {
+							connections[type][outputIndex].forEach((connectionInfo: IConnection) => {
 								// Remove currenct connection
 
 								const connectionDataDisonnect = [
 									{
 										node: lastSelectedNode.name,
 										type,
-										index: inputIndex,
+										index: outputIndex,
 									},
 									connectionInfo,
 								] as [IConnection, IConnection];
@@ -990,7 +996,7 @@ export default mixins(
 									{
 										node: newNodeData.name,
 										type,
-										index: inputIndex,
+										index: 0,
 									},
 									connectionInfo,
 								] as [IConnection, IConnection];
@@ -1007,7 +1013,7 @@ export default mixins(
 						{
 							node: lastSelectedNode.name,
 							type: 'main',
-							index: 0,
+							index: outputIndex,
 						},
 						{
 							node: newNodeData.name,
@@ -1020,21 +1026,9 @@ export default mixins(
 				}
 			},
 			initNodeView () {
-				this.instance.importDefaults({
-					// notice the 'curviness' argument to this Bezier curve.
-					// the curves on this page are far smoother
-					// than the curves on the first demo, which use the default curviness value.
-					// Connector: ["Bezier", { curviness: 80 }],
-					Connector: ['Bezier', { curviness: 40 }],
-					// @ts-ignore
-					Endpoint: ['Dot', { radius: 5 }],
-					DragOptions: { cursor: 'pointer', zIndex: 5000 },
-					PaintStyle: { strokeWidth: 2, stroke: '#334455' },
-					EndpointStyle: { radius: 9, fill: '#acd', stroke: 'red' },
-					// EndpointStyle: {},
-					HoverPaintStyle: { stroke: '#ff6d5a', lineWidth: 4 },
-					EndpointHoverStyle: { fill: '#ff6d5a', stroke: '#acd' },
-					ConnectionOverlays: [
+				const connectionOverlays: OverlaySpec[] = [];
+				if (this.isReadOnly === false) {
+					connectionOverlays.push.apply(connectionOverlays, [
 						[
 							'Arrow',
 							{
@@ -1052,7 +1046,24 @@ export default mixins(
 								location: 0.5,
 							},
 						],
-					],
+					]);
+				}
+
+				this.instance.importDefaults({
+					// notice the 'curviness' argument to this Bezier curve.
+					// the curves on this page are far smoother
+					// than the curves on the first demo, which use the default curviness value.
+					// Connector: ["Bezier", { curviness: 80 }],
+					Connector: ['Bezier', { curviness: 40 }],
+					// @ts-ignore
+					Endpoint: ['Dot', { radius: 5 }],
+					DragOptions: { cursor: 'pointer', zIndex: 5000 },
+					PaintStyle: { strokeWidth: 2, stroke: '#334455' },
+					EndpointStyle: { radius: 9, fill: '#acd', stroke: 'red' },
+					// EndpointStyle: {},
+					HoverPaintStyle: { stroke: '#ff6d5a', lineWidth: 4 },
+					EndpointHoverStyle: { fill: '#ff6d5a', stroke: '#acd' },
+					ConnectionOverlays: connectionOverlays,
 					Container: '#node-view',
 				});
 
@@ -1062,6 +1073,9 @@ export default mixins(
 					// to it.
 					const sourceNodeName = this.$store.getters.getNodeNameByIndex(info.sourceId.slice(NODE_NAME_PREFIX.length));
 					this.$store.commit('setLastSelectedNode', sourceNodeName);
+
+					const sourceInfo = info.getParameters();
+					this.$store.commit('setLastSelectedNodeOutputIndex', sourceInfo.index);
 
 					// Display the node-creator
 					this.createNodeActive = true;
@@ -1104,41 +1118,43 @@ export default mixins(
 						info.connection.setConnector(['Straight']);
 					}
 
-					// Display the connection-delete button only on hover
-					let timer: NodeJS.Timeout | undefined;
-					info.connection.bind('mouseover', (connection: IConnection) => {
-						if (timer !== undefined) {
-							clearTimeout(timer);
-						}
-						const overlay = info.connection.getOverlay('remove-connection');
-						overlay.setVisible(true);
-					});
-					info.connection.bind('mouseout', (connection: IConnection) => {
-						timer = setTimeout(() => {
-							const overlay = info.connection.getOverlay('remove-connection');
-							overlay.setVisible(false);
-							timer = undefined;
-						}, 500);
-					});
-
 					// @ts-ignore
 					info.connection.removeOverlay('drop-add-node');
 
-					// @ts-ignore
-					info.connection.addOverlay([
-						'Label',
-						{
-							id: 'remove-connection',
-							label: '<span class="delete-connection clickable" title="Delete Connection">x</span>',
-							cssClass: 'remove-connection-label',
-							visible: false,
-							events: {
-								mousedown: () => {
-									this.__removeConnectionByConnectionInfo(info, true);
+					if (this.isReadOnly === false) {
+						// Display the connection-delete button only on hover
+						let timer: NodeJS.Timeout | undefined;
+						info.connection.bind('mouseover', (connection: IConnection) => {
+							if (timer !== undefined) {
+								clearTimeout(timer);
+							}
+							const overlay = info.connection.getOverlay('remove-connection');
+							overlay.setVisible(true);
+						});
+						info.connection.bind('mouseout', (connection: IConnection) => {
+							timer = setTimeout(() => {
+								const overlay = info.connection.getOverlay('remove-connection');
+								overlay.setVisible(false);
+								timer = undefined;
+							}, 500);
+						});
+
+						// @ts-ignore
+						info.connection.addOverlay([
+							'Label',
+							{
+								id: 'remove-connection',
+								label: '<span class="delete-connection clickable" title="Delete Connection">x</span>',
+								cssClass: 'remove-connection-label',
+								visible: false,
+								events: {
+									mousedown: () => {
+										this.__removeConnectionByConnectionInfo(info, true);
+									},
 								},
 							},
-						},
-					]);
+						]);
+					}
 
 					// Display input names if they exist on connection
 					const targetNodeTypeData: INodeTypeDescription = this.$store.getters.nodeType(targetNode.type);
@@ -1311,6 +1327,8 @@ export default mixins(
 					}
 
 					if (workflowId !== null) {
+						const workflow = await this.restApi().getWorkflow(workflowId);
+						this.$titleSet(workflow.name, 'IDLE');
 						// Open existing workflow
 						await this.openWorkflow(workflowId);
 					} else {
@@ -1333,6 +1351,7 @@ export default mixins(
 					// @ts-ignore
 					this.instance.connect({
 						uuids: uuid,
+						detachable: !this.isReadOnly,
 					});
 				} else {
 					// When nodes get connected it gets saved automatically to the storage
@@ -1399,7 +1418,7 @@ export default mixins(
 
 				newNodeData.position = this.getNewNodePosition(
 					[node.position[0], node.position[1] + 150],
-					[0, 150]
+					[0, 150],
 				);
 
 				await this.addNodes([newNodeData]);
@@ -1497,7 +1516,7 @@ export default mixins(
 						nameInput.select();
 					}
 
-					const promptResponse = await promptResponsePromise;
+					const promptResponse = await promptResponsePromise as MessageBoxInputData;
 
 					this.renameNode(currentName, promptResponse.value);
 				} catch (e) {}
@@ -1571,6 +1590,11 @@ export default mixins(
 							console.error(e); // eslint-disable-line no-console
 						}
 						node.parameters = nodeParameters !== null ? nodeParameters : {};
+
+						// if it's a webhook and the path is empty set the UUID as the default path
+						if (node.type === 'n8n-nodes-base.webhook' && node.parameters.path === '') {
+							node.parameters.path = node.webhookId as string;
+						}
 					}
 
 					foundNodeIssues = this.getNodeIssues(nodeType, node);
@@ -1595,7 +1619,7 @@ export default mixins(
 						for (const type of Object.keys(connections[sourceNode])) {
 							for (let sourceIndex = 0; sourceIndex < connections[sourceNode][type].length; sourceIndex++) {
 								connections[sourceNode][type][sourceIndex].forEach((
-									targetData
+									targetData,
 								) => {
 									connectionData = [
 										{
@@ -1846,6 +1870,8 @@ export default mixins(
 				this.$store.commit('setSaveDataSuccessExecution', settings.saveDataSuccessExecution);
 				this.$store.commit('setSaveManualExecutions', settings.saveManualExecutions);
 				this.$store.commit('setTimezone', settings.timezone);
+				this.$store.commit('setExecutionTimeout', settings.executionTimeout);
+				this.$store.commit('setMaxExecutionTimeout', settings.maxExecutionTimeout);
 				this.$store.commit('setVersionCli', settings.versionCli);
 			},
 			async loadNodeTypes (): Promise<void> {

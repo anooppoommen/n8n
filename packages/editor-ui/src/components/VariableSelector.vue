@@ -168,17 +168,26 @@ export default mixins(
 
 				const returnData: IVariableSelectorOption[] = [];
 				if (inputData === null) {
+					returnData.push(
+						{
+							name: propertyName,
+							key: fullpath,
+							value: '[null]',
+						} as IVariableSelectorOption,
+					);
 					return returnData;
 				} else if (Array.isArray(inputData)) {
 					let newPropertyName = propertyName;
+					let newParentPath = parentPath;
 					if (propertyIndex !== undefined) {
-						newPropertyName += `[${propertyIndex}]`;
+						newParentPath += `["${propertyName}"]`;
+						newPropertyName = propertyIndex.toString();
 					}
 
 					const arrayData: IVariableSelectorOption[] = [];
 
 					for (let i = 0; i < inputData.length; i++) {
-						arrayData.push.apply(arrayData, this.jsonDataToFilterOption(inputData[i], parentPath, newPropertyName, filterText, i, `[Item: ${i}]`, skipKey));
+						arrayData.push.apply(arrayData, this.jsonDataToFilterOption(inputData[i], newParentPath, newPropertyName, filterText, i, `[Item: ${i}]`, skipKey));
 					}
 
 					returnData.push(
@@ -188,7 +197,7 @@ export default mixins(
 							key: fullpath,
 							allowParentSelect: true,
 							dataType: 'array',
-						} as IVariableSelectorOption
+						} as IVariableSelectorOption,
 					);
 				} else if (typeof inputData === 'object') {
 					const tempValue: IVariableSelectorOption[] = [];
@@ -205,7 +214,7 @@ export default mixins(
 								key: fullpath,
 								allowParentSelect: true,
 								dataType: 'object',
-							} as IVariableSelectorOption
+							} as IVariableSelectorOption,
 						);
 					}
 				} else {
@@ -220,7 +229,7 @@ export default mixins(
 								name: propertyName,
 								key: fullpath,
 								value: inputData,
-							} as IVariableSelectorOption
+							} as IVariableSelectorOption,
 						);
 					}
 				}
@@ -284,7 +293,7 @@ export default mixins(
 				if (outputData.hasOwnProperty('json')) {
 					const jsonDataOptions: IVariableSelectorOption[] = [];
 					for (const propertyName of Object.keys(outputData.json)) {
-						jsonDataOptions.push.apply(jsonDataOptions, this.jsonDataToFilterOption(outputData.json[propertyName], `$node["${nodeName}"].data`, propertyName, filterText));
+						jsonDataOptions.push.apply(jsonDataOptions, this.jsonDataToFilterOption(outputData.json[propertyName], `$node["${nodeName}"].json`, propertyName, filterText));
 					}
 
 					if (jsonDataOptions.length) {
@@ -292,7 +301,7 @@ export default mixins(
 							{
 								name: 'JSON',
 								options: this.sortOptions(jsonDataOptions),
-							}
+							},
 						);
 					}
 				}
@@ -319,7 +328,7 @@ export default mixins(
 									name: propertyName,
 									key: `$node["${nodeName}"].binary.${dataPropertyName}.${propertyName}`,
 									value: outputData.binary![dataPropertyName][propertyName],
-								}
+								},
 							);
 						}
 
@@ -330,7 +339,7 @@ export default mixins(
 									key: `$node["${nodeName}"].binary.${dataPropertyName}`,
 									options: this.sortOptions(binaryPropertyData),
 									allowParentSelect: true,
-								}
+								},
 							);
 						}
 					}
@@ -341,7 +350,7 @@ export default mixins(
 								key: `$node["${nodeName}"].binary`,
 								options: this.sortOptions(binaryData),
 								allowParentSelect: true,
-							}
+							},
 						);
 					}
 				}
@@ -474,7 +483,7 @@ export default mixins(
 								{
 									name: 'Input Data',
 									options: this.sortOptions(tempOutputData),
-								}
+								},
 							);
 						} else {
 							// Data is to large so do not add
@@ -486,7 +495,7 @@ export default mixins(
 											name: '[Data to large]',
 										},
 									],
-								}
+								},
 							);
 						}
 					}
@@ -502,14 +511,14 @@ export default mixins(
 					{
 						name: 'Parameters',
 						options: this.sortOptions(this.getNodeParameters(activeNode.name, initialPath, skipParameter, filterText) as IVariableSelectorOption[]),
-					}
+					},
 				);
 
 				returnData.push(
 					{
 						name: 'Current Node',
 						options: this.sortOptions(currentNodeData),
-					}
+					},
 				);
 
 				// Add the input data
@@ -560,7 +569,7 @@ export default mixins(
 								{
 									name: 'Output Data',
 									options: this.sortOptions(tempOutputData),
-								} as IVariableSelectorOption
+								} as IVariableSelectorOption,
 							);
 						}
 					}
@@ -569,7 +578,7 @@ export default mixins(
 						{
 							name: nodeName,
 							options: this.sortOptions(nodeOptions),
-						}
+						},
 					);
 				}
 
@@ -577,7 +586,7 @@ export default mixins(
 					{
 						name: 'Nodes',
 						options: this.sortOptions(allNodesData),
-					}
+					},
 				);
 
 				// Remove empty entries and return

@@ -138,7 +138,7 @@ describe('Workflow', () => {
 		];
 
 		const nodeTypes = Helpers.NodeTypes();
-		const workflow = new Workflow(undefined, [], {}, false, nodeTypes);
+		const workflow = new Workflow({ nodes: [], connections: {}, active: false, nodeTypes });
 
 		for (const testData of tests) {
 			test(testData.description, () => {
@@ -565,7 +565,7 @@ describe('Workflow', () => {
 					executeNodes.push(createNodeData(node));
 				}
 
-				workflow = new Workflow(undefined, executeNodes, testData.input.connections as IConnections, false, nodeTypes);
+				workflow = new Workflow({ nodes: executeNodes, connections: testData.input.connections as IConnections, active: false, nodeTypes });
 				workflow.renameNode(testData.input.currentName, testData.input.newName);
 
 				resultNodes = {};
@@ -936,6 +936,29 @@ describe('Workflow', () => {
 					value1: 'default-value1',
 				},
 			},
+			{
+				description: 'return resolved value when referencing another property with expression on another node (long "$node["{NODE}"].parameter" syntax)',
+				input: {
+					Node1: {
+						parameters: {
+							value1: 'valueNode1',
+						}
+					},
+					Node2: {
+						parameters: {
+							value1: '={{$node["Node1"].parameter.value1}}a',
+						},
+					},
+					Node3: {
+						parameters: {
+							value1: '={{$node["Node2"].parameter.value1}}b',
+						},
+					}
+				},
+				output: {
+					value1: 'valueNode1ab',
+				},
+			},
 			// TODO: Make that this test does not fail!
 			// {
 			//     description: 'return resolved value when short "data" syntax got used in expression on paramter of not active node which got referenced by active one',
@@ -1039,7 +1062,7 @@ describe('Workflow', () => {
 					}
 				};
 
-				const workflow = new Workflow(undefined, nodes, connections, false, nodeTypes);
+				const workflow = new Workflow({ nodes, connections, active: false, nodeTypes });
 				const activeNodeName = testData.input.hasOwnProperty('Node3') ? 'Node3' : 'Node2';
 
 				const runExecutionData: IRunExecutionData = {
@@ -1074,7 +1097,7 @@ describe('Workflow', () => {
 
 				for (const parameterName of Object.keys(testData.output)) {
 					const parameterValue = nodes.find((node) => node.name === activeNodeName)!.parameters[parameterName];
-					const result = workflow.getParameterValue(parameterValue, runExecutionData, runIndex, itemIndex, activeNodeName, connectionInputData);
+					const result = workflow.expression.getParameterValue(parameterValue, runExecutionData, runIndex, itemIndex, activeNodeName, connectionInputData);
 					// @ts-ignore
 					expect(result).toEqual(testData.output[parameterName]);
 				}
@@ -1126,7 +1149,7 @@ describe('Workflow', () => {
 		//     };
 
 		//     const nodeTypes = Helpers.NodeTypes();
-		//     const workflow = new Workflow(nodes, connections, false, nodeTypes);
+		//     const workflow = new Workflow({ nodes, connections, active: false, nodeTypes });
 		//     const activeNodeName = 'Node2';
 
 		//     // @ts-ignore
@@ -1193,7 +1216,7 @@ describe('Workflow', () => {
 			];
 			const connections: IConnections = {};
 
-			const workflow = new Workflow(undefined, nodes, connections, false, nodeTypes);
+			const workflow = new Workflow({ nodes, connections, active: false, nodeTypes });
 			const activeNodeName = 'Node1';
 
 			const runExecutionData: IRunExecutionData = {
@@ -1203,11 +1226,12 @@ describe('Workflow', () => {
 							{
 								startTime: 1,
 								executionTime: 1,
-								// @ts-ignore
 								data: {
 									main: [
 										[
-											{}
+											{
+												json: {},
+											}
 										]
 									]
 								}
@@ -1223,7 +1247,7 @@ describe('Workflow', () => {
 			const parameterName = 'values';
 
 			const parameterValue = nodes.find((node) => node.name === activeNodeName)!.parameters[parameterName];
-			const result = workflow.getParameterValue(parameterValue, runExecutionData, runIndex, itemIndex, activeNodeName, connectionInputData);
+			const result = workflow.expression.getParameterValue(parameterValue, runExecutionData, runIndex, itemIndex, activeNodeName, connectionInputData);
 
 			expect(result).toEqual({
 				string: [

@@ -29,12 +29,6 @@ export const nodeBase = mixins(nodeIndex).extend({
 		isMacOs (): boolean {
 			return /(ipad|iphone|ipod|mac)/i.test(navigator.platform);
 		},
-		isReadOnly (): boolean {
-			if (['NodeViewExisting', 'NodeViewNew'].includes(this.$route.name as string)) {
-				return false;
-			}
-			return true;
-		},
 		nodeName (): string {
 			return NODE_NAME_PREFIX + this.nodeIndex;
 		},
@@ -65,30 +59,42 @@ export const nodeBase = mixins(nodeIndex).extend({
 		'name',
 		'nodeId',
 		'instance',
+		'isReadOnly',
 	],
 	methods: {
 		__addNode (node: INodeUi) {
 			// TODO: Later move the node-connection definitions to a special file
+
+			let nodeTypeData = this.$store.getters.nodeType(node.type);
+
 			const nodeConnectors: IConnectionsUi = {
 				main: {
 					input: {
 						uuid: '-input',
 						maxConnections: -1,
 						endpoint: 'Rectangle',
-						endpointStyle: { width: 10, height: 24, fill: '#777', stroke: '#777', lineWidth: 0 },
+						endpointStyle: {
+							width: nodeTypeData && nodeTypeData.outputs.length > 2 ? 9 : 10,
+							height: nodeTypeData && nodeTypeData.outputs.length > 2 ? 18 : 24,
+							fill: '#777',
+							stroke: '#777',
+							lineWidth: 0,
+						},
 						dragAllowedWhenFull: true,
 					},
 					output: {
 						uuid: '-output',
 						maxConnections: -1,
 						endpoint: 'Dot',
-						endpointStyle: { radius: 11, fill: '#555', outlineStroke: 'none' },
+						endpointStyle: {
+							radius: nodeTypeData && nodeTypeData.outputs.length > 2 ? 7 : 11,
+							fill: '#555',
+							outlineStroke: 'none',
+						},
 						dragAllowedWhenFull: true,
 					},
 				},
 			};
-
-			let nodeTypeData = this.$store.getters.nodeType(node.type);
 
 			if (!nodeTypeData) {
 				// If node type is not know use by default the base.noOp data to display it
@@ -113,6 +119,12 @@ export const nodeBase = mixins(nodeIndex).extend({
 						[0, 0.5, -1, 0],
 						[0, 0.75, -1, 0],
 					],
+					4: [
+						[0, 0.2, -1, 0],
+						[0, 0.4, -1, 0],
+						[0, 0.6, -1, 0],
+						[0, 0.8, -1, 0],
+					],
 				},
 				output: {
 					1: [
@@ -126,6 +138,12 @@ export const nodeBase = mixins(nodeIndex).extend({
 						[1, 0.25, 1, 0],
 						[1, 0.5, 1, 0],
 						[1, 0.75, 1, 0],
+					],
+					4: [
+						[1, 0.2, 1, 0],
+						[1, 0.4, 1, 0],
+						[1, 0.6, 1, 0],
+						[1, 0.8, 1, 0],
 					],
 				},
 			};
@@ -159,7 +177,7 @@ export const nodeBase = mixins(nodeIndex).extend({
 					endpoint: inputData.endpoint,
 					endpointStyle: inputData.endpointStyle,
 					isSource: false,
-					isTarget: true,
+					isTarget: !this.isReadOnly,
 					parameters: {
 						nodeIndex: this.nodeIndex,
 						type: inputName,
@@ -223,7 +241,7 @@ export const nodeBase = mixins(nodeIndex).extend({
 					maxConnections: inputData.maxConnections,
 					endpoint: inputData.endpoint,
 					endpointStyle: inputData.endpointStyle,
-					isSource: true,
+					isSource: !this.isReadOnly,
 					isTarget: false,
 					parameters: {
 						nodeIndex: this.nodeIndex,
@@ -252,10 +270,18 @@ export const nodeBase = mixins(nodeIndex).extend({
 				this.instance.addEndpoint(this.nodeName, newEndpointData);
 			});
 
+			// TODO: This caused problems with displaying old information
+			//       https://github.com/jsplumb/katavorio/wiki
+			//       https://jsplumb.github.io/jsplumb/home.html
 			// Make nodes draggable
 			this.instance.draggable(this.nodeName, {
 				grid: [10, 10],
 				start: (params: { e: MouseEvent }) => {
+					if (this.isReadOnly === true) {
+						// Do not allow to move nodes in readOnly mode
+						return false;
+					}
+
 					if (params.e && !this.$store.getters.isNodeSelected(this.data.name)) {
 						// Only the node which gets dragged directly gets an event, for all others it is
 						// undefined. So check if the currently dragged node is selected and if not clear
@@ -265,8 +291,9 @@ export const nodeBase = mixins(nodeIndex).extend({
 					}
 
 					this.$store.commit('addActiveAction', 'dragActive');
+					return true;
 				},
-				stop: (params: { e: MouseEvent}) => {
+				stop: (params: { e: MouseEvent }) => {
 					if (this.$store.getters.isActionActive('dragActive')) {
 						const moveNodes = this.$store.getters.getSelectedNodes.slice();
 						const selectedNodeNames = moveNodes.map((node: INodeUi) => node.name);
@@ -307,6 +334,7 @@ export const nodeBase = mixins(nodeIndex).extend({
 				},
 				filter: '.node-description, .node-description .node-name, .node-description .node-subtitle',
 			});
+
 		},
 
 		isCtrlKeyPressed (e: MouseEvent | KeyboardEvent): boolean {

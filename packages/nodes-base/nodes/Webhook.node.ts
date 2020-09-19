@@ -1,9 +1,11 @@
 import {
+	BINARY_ENCODING,
 	IWebhookFunctions,
 } from 'n8n-core';
 
 import {
 	IDataObject,
+	INodeExecutionData,
 	INodeTypeDescription,
 	INodeType,
 	IWebhookResponseData,
@@ -12,6 +14,10 @@ import {
 import * as basicAuth from 'basic-auth';
 
 import { Response } from 'express';
+
+import * as fs from 'fs';
+
+import * as formidable from 'formidable';
 
 function authorizationError(resp: Response, realm: string, responseCode: number, message?: string) {
 	if (message === undefined) {
@@ -71,12 +77,14 @@ export class Webhook implements INodeType {
 			{
 				name: 'default',
 				httpMethod: '={{$parameter["httpMethod"]}}',
+				isFullPath: true,
 				responseCode: '={{$parameter["responseCode"]}}',
 				responseMode: '={{$parameter["responseMode"]}}',
 				responseData: '={{$parameter["responseData"]}}',
 				responseBinaryPropertyName: '={{$parameter["responseBinaryPropertyName"]}}',
 				responseContentType: '={{$parameter["options"]["responseContentType"]}}',
 				responsePropertyName: '={{$parameter["options"]["responsePropertyName"]}}',
+				responseHeaders: '={{$parameter["options"]["responseHeaders"]}}',
 				path: '={{$parameter["path"]}}',
 			},
 		],
@@ -119,7 +127,6 @@ export class Webhook implements INodeType {
 				default: 'GET',
 				description: 'The HTTP method to liste to.',
 			},
-
 			{
 				displayName: 'Path',
 				name: 'path',
@@ -127,7 +134,7 @@ export class Webhook implements INodeType {
 				default: '',
 				placeholder: 'webhook',
 				required: true,
-				description: 'The path to listen to',
+				description: 'The path to listen to.',
 			},
 			{
 				displayName: 'Response Code',
@@ -205,48 +212,134 @@ export class Webhook implements INodeType {
 				},
 				description: 'Name of the binary property to return',
 			},
-
 			{
 				displayName: 'Options',
 				name: 'options',
 				type: 'collection',
-				displayOptions: {
-					show: {
-						responseData: [
-							'firstEntryJson',
-						],
-						responseMode: [
-							'lastNode',
-						],
-					},
-				},
 				placeholder: 'Add Option',
 				default: {},
 				options: [
 					{
+						displayName: 'Binary Data',
+						name: 'binaryData',
+						type: 'boolean',
+						displayOptions: {
+							show: {
+								'/httpMethod': [
+									'POST',
+								],
+							},
+						},
+						default: false,
+						description: 'Set to true if webhook will receive binary data.',
+					},
+					{
+						displayName: 'Binary Property',
+						name: 'binaryPropertyName',
+						type: 'string',
+						default: 'data',
+						required: true,
+						displayOptions: {
+							show: {
+								binaryData: [
+									true,
+								],
+							},
+						},
+						description: `Name of the binary property to which to write the data of<br />
+									the received file. If the data gets received via "Form-Data Multipart"<br />
+									it will be the prefix and a number starting with 0 will be attached to it.`,
+					},
+					{
 						displayName: 'Response Content-Type',
 						name: 'responseContentType',
 						type: 'string',
+						displayOptions: {
+							show: {
+								'/responseData': [
+									'firstEntryJson',
+								],
+								'/responseMode': [
+									'lastNode',
+								],
+							},
+						},
 						default: '',
 						placeholder: 'application/xml',
 						description: 'Set a custom content-type to return if another one as the "application/json" should be returned.',
 					},
 					{
+						displayName: 'Response Headers',
+						name: 'responseHeaders',
+						placeholder: 'Add Response Header',
+						description: 'Add headers to the webhook response.',
+						type: 'fixedCollection',
+						typeOptions: {
+							multipleValues: true,
+						},
+						default: {},
+						options: [
+							{
+								name: 'entries',
+								displayName: 'Entries',
+								values: [
+									{
+										displayName: 'Name',
+										name: 'name',
+										type: 'string',
+										default: '',
+										description: 'Name of the header.',
+									},
+									{
+										displayName: 'Value',
+										name: 'value',
+										type: 'string',
+										default: '',
+										description: 'Value of the header.',
+									},
+								]
+							},
+						],
+					},
+					{
 						displayName: 'Property Name',
 						name: 'responsePropertyName',
 						type: 'string',
+						displayOptions: {
+							show: {
+								'/responseData': [
+									'firstEntryJson',
+								],
+								'/responseMode': [
+									'lastNode',
+								],
+							},
+						},
 						default: 'data',
 						description: 'Name of the property to return the data of instead of the whole JSON.',
 					},
+					{
+						displayName: 'Raw Body',
+						name: 'rawBody',
+						type: 'boolean',
+						displayOptions: {
+							hide: {
+								binaryData: [
+									true,
+								],
+							},
+						},
+						default: false,
+						description: 'Raw body (binary)',
+					},
 				],
 			},
-
 		],
 	};
 
-
 	async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
-		const authentication = this.getNodeParameter('authentication', 0) as string;
+		const authentication = this.getNodeParameter('authentication') as string;
+		const options = this.getNodeParameter('options', {}) as IDataObject;
 		const req = this.getRequestObject();
 		const resp = this.getResponseObject();
 		const headers = this.getHeaderData();
@@ -289,19 +382,109 @@ export class Webhook implements INodeType {
 			}
 		}
 
-		const returnData: IDataObject[] = [];
+		// @ts-ignore
+		const mimeType = headers['content-type'] || 'application/json';
+		if (mimeType.includes('multipart/form-data')) {
+			const form = new formidable.IncomingForm();
 
-		returnData.push(
-			{
+			return new Promise((resolve, reject) => {
+
+				form.parse(req, async (err, data, files) => {
+					const returnItem: INodeExecutionData = {
+						binary: {},
+						json: {
+							body: data,
+							headers,
+							query: this.getQueryData(),
+						},
+					};
+
+					let count = 0;
+					for (const file of Object.keys(files)) {
+
+						let binaryPropertyName = file;
+						if (options.binaryPropertyName) {
+							binaryPropertyName = `${options.binaryPropertyName}${count}`;
+						}
+
+						const fileJson = files[file].toJSON() as IDataObject;
+						const fileContent = await fs.promises.readFile(files[file].path);
+
+						returnItem.binary![binaryPropertyName] = await this.helpers.prepareBinaryData(Buffer.from(fileContent), fileJson.name as string, fileJson.type as string);
+
+						count += 1;
+					}
+					resolve({
+						workflowData: [
+							[
+								returnItem,
+							]
+						],
+					});
+				});
+
+			});
+		}
+
+		if (options.binaryData === true) {
+			return new Promise((resolve, reject) => {
+				const binaryPropertyName = options.binaryPropertyName || 'data';
+				const data: Buffer[] = [];
+
+				req.on('data', (chunk) => {
+					data.push(chunk);
+				});
+
+				req.on('end', async () => {
+					const returnItem: INodeExecutionData = {
+						binary: {},
+						json: {
+							body: this.getBodyData(),
+							headers,
+							query: this.getQueryData(),
+						},
+					};
+
+					returnItem.binary![binaryPropertyName as string] = await this.helpers.prepareBinaryData(Buffer.concat(data));
+
+					return resolve({
+						workflowData: [
+							[
+								returnItem
+							]
+						],
+					});
+				});
+
+				req.on('error', (err) => {
+					throw new Error(err.message);
+				});
+			});
+		}
+
+		const response: INodeExecutionData = {
+			json: {
 				body: this.getBodyData(),
 				headers,
 				query: this.getQueryData(),
-			}
-		);
+			},
+		};
+
+		if (options.rawBody) {
+			response.binary = {
+				data: {
+					// @ts-ignore
+					data: req.rawBody.toString(BINARY_ENCODING),
+					mimeType,
+				}
+			};
+		}
 
 		return {
 			workflowData: [
-				this.helpers.returnJsonArray(returnData)
+				[
+					response,
+				],
 			],
 		};
 	}

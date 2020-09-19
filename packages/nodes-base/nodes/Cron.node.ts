@@ -54,24 +54,32 @@ export class Cron implements INodeType {
 								type: 'options',
 								options: [
 									{
+										name: 'Every Minute',
+										value: 'everyMinute',
+									},
+									{
 										name: 'Every Hour',
-										value: 'everyHour'
+										value: 'everyHour',
 									},
 									{
 										name: 'Every Day',
-										value: 'everyDay'
+										value: 'everyDay',
 									},
 									{
 										name: 'Every Week',
-										value: 'everyWeek'
+										value: 'everyWeek',
 									},
 									{
 										name: 'Every Month',
-										value: 'everyMonth'
+										value: 'everyMonth',
+									},
+									{
+										name: 'Every X',
+										value: 'everyX',
 									},
 									{
 										name: 'Custom',
-										value: 'custom'
+										value: 'custom',
 									},
 								],
 								default: 'everyDay',
@@ -90,6 +98,8 @@ export class Cron implements INodeType {
 										mode: [
 											'custom',
 											'everyHour',
+											'everyMinute',
+											'everyX',
 										],
 									},
 								},
@@ -108,6 +118,8 @@ export class Cron implements INodeType {
 									hide: {
 										mode: [
 											'custom',
+											'everyMinute',
+											'everyX',
 										],
 									},
 								},
@@ -190,6 +202,48 @@ export class Cron implements INodeType {
 								default: '* * * * * *',
 								description: 'Use custom cron expression. Values and ranges as follows:<ul><li>Seconds: 0-59</li><li>Minutes: 0 - 59</li><li>Hours: 0 - 23</li><li>Day of Month: 1 - 31</li><li>Months: 0 - 11 (Jan - Dec)</li><li>Day of Week: 0 - 6 (Sun - Sat)</li></ul>',
 							},
+							{
+								displayName: 'Value',
+								name: 'value',
+								type: 'number',
+								typeOptions: {
+									minValue: 0,
+									maxValue: 1000,
+								},
+								displayOptions: {
+									show: {
+										mode: [
+											'everyX',
+										],
+									},
+								},
+								default: 2,
+								description: 'All how many X minutes/hours it should trigger.',
+							},
+							{
+								displayName: 'Unit',
+								name: 'unit',
+								type: 'options',
+								displayOptions: {
+									show: {
+										mode: [
+											'everyX',
+										],
+									},
+								},
+								options: [
+									{
+										name: 'Minutes',
+										value: 'minutes'
+									},
+									{
+										name: 'Hours',
+										value: 'hours'
+									},
+								],
+								default: 'hours',
+								description: 'If it should trigger all X minutes or hours.',
+							},
 						]
 					},
 				],
@@ -224,6 +278,18 @@ export class Cron implements INodeType {
 				cronTime = [];
 				if (item.mode === 'custom') {
 					cronTimes.push(item.cronExpression as string);
+					continue;
+				}
+				if (item.mode === 'everyMinute') {
+					cronTimes.push(`${Math.floor(Math.random() * 60).toString()} * * * * *`);
+					continue;
+				}
+				if (item.mode === 'everyX') {
+					if (item.unit === 'minutes') {
+						cronTimes.push(`${Math.floor(Math.random() * 60).toString()} */${item.value} * * * *`);
+					} else if (item.unit === 'hours') {
+						cronTimes.push(`${Math.floor(Math.random() * 60).toString()} 0 */${item.value} * * *`);
+					}
 					continue;
 				}
 

@@ -29,8 +29,6 @@ import {
 	XYPositon,
 } from './Interface';
 
-import { get } from 'lodash';
-
 Vue.use(Vuex);
 
 export const store = new Vuex.Store({
@@ -40,7 +38,8 @@ export const store = new Vuex.Store({
 		activeWorkflows: [] as string[],
 		activeActions: [] as string[],
 		activeNode: null as string | null,
-		baseUrl: process.env.VUE_APP_URL_BASE_API ? process.env.VUE_APP_URL_BASE_API : '/',
+		// @ts-ignore
+		baseUrl: process.env.VUE_APP_URL_BASE_API ? process.env.VUE_APP_URL_BASE_API : (window.BASE_PATH === '/%BASE_PATH%/' ? '/' : window.BASE_PATH),
 		credentials: null as ICredentialsResponse[] | null,
 		credentialTypes: null as ICredentialType[] | null,
 		endpointWebhook: 'webhook',
@@ -53,9 +52,12 @@ export const store = new Vuex.Store({
 		saveDataSuccessExecution: 'all',
 		saveManualExecutions: false,
 		timezone: 'America/New_York',
+		executionTimeout: -1,
+		maxExecutionTimeout: Number.MAX_SAFE_INTEGER,
 		versionCli: '0.0.0',
 		workflowExecutionData: null as IExecutionResponse | null,
 		lastSelectedNode: null as string | null,
+		lastSelectedNodeOutputIndex: null as number | null,
 		nodeIndex: [] as Array<string | null>,
 		nodeTypes: [] as INodeTypeDescription[],
 		nodeViewOffsetPosition: [0, 0] as XYPositon,
@@ -479,6 +481,12 @@ export const store = new Vuex.Store({
 		setTimezone (state, timezone: string) {
 			Vue.set(state, 'timezone', timezone);
 		},
+		setExecutionTimeout (state, executionTimeout: number) {
+			Vue.set(state, 'executionTimeout', executionTimeout);
+		},
+		setMaxExecutionTimeout (state, maxExecutionTimeout: number) {
+			Vue.set(state, 'maxExecutionTimeout', maxExecutionTimeout);
+		},
 		setVersionCli (state, version: string) {
 			Vue.set(state, 'versionCli', version);
 		},
@@ -499,6 +507,10 @@ export const store = new Vuex.Store({
 
 		setLastSelectedNode (state, nodeName: string) {
 			state.lastSelectedNode = nodeName;
+		},
+
+		setLastSelectedNodeOutputIndex (state, outputIndex: number | null) {
+			state.lastSelectedNodeOutputIndex = outputIndex;
 		},
 
 		setWorkflowExecutionData (state, workflowResultData: IExecutionResponse | null) {
@@ -566,6 +578,9 @@ export const store = new Vuex.Store({
 			}
 			return `${state.baseUrl}${endpoint}`;
 		},
+		getWebhookBaseUrl: (state): string => {
+			return state.urlBaseWebhook;
+		},
 		getWebhookUrl: (state): string => {
 			return `${state.urlBaseWebhook}${state.endpointWebhook}`;
 		},
@@ -584,6 +599,12 @@ export const store = new Vuex.Store({
 		},
 		timezone: (state): string => {
 			return state.timezone;
+		},
+		executionTimeout: (state): number => {
+			return state.executionTimeout;
+		},
+		maxExecutionTimeout: (state): number => {
+			return state.maxExecutionTimeout;
 		},
 		versionCli: (state): string => {
 			return state.versionCli;
@@ -711,6 +732,9 @@ export const store = new Vuex.Store({
 		},
 		lastSelectedNode: (state, getters): INodeUi | null => {
 			return getters.nodeByName(state.lastSelectedNode);
+		},
+		lastSelectedNodeOutputIndex: (state, getters): number | null => {
+			return state.lastSelectedNodeOutputIndex;
 		},
 
 		// Active Execution

@@ -13,6 +13,7 @@ import {
 } from '.';
 
 import { ChildProcess } from 'child_process';
+import * as PCancelable from 'p-cancelable';
 
 
 export class ActiveExecutions {
@@ -30,7 +31,7 @@ export class ActiveExecutions {
 	 * @returns {string}
 	 * @memberof ActiveExecutions
 	 */
-	add(process: ChildProcess, executionData: IWorkflowExecutionDataProcess): string {
+	add(executionData: IWorkflowExecutionDataProcess, process?: ChildProcess): string {
 		const executionId = this.nextId++;
 
 		this.activeExecutions[executionId] = {
@@ -41,6 +42,22 @@ export class ActiveExecutions {
 		};
 
 		return executionId.toString();
+	}
+
+
+	/**
+	 * Attaches an execution
+	 *
+	 * @param {string} executionId
+	 * @param {PCancelable<IRun>} workflowExecution
+	 * @memberof ActiveExecutions
+	 */
+	attachWorkflowExecution(executionId: string, workflowExecution: PCancelable<IRun>) {
+		if (this.activeExecutions[executionId] === undefined) {
+			throw new Error(`No active execution with id "${executionId}" got found to attach to workflowExecution to!`);
+		}
+
+		this.activeExecutions[executionId].workflowExecution = workflowExecution;
 	}
 
 
@@ -71,10 +88,11 @@ export class ActiveExecutions {
 	 * Forces an execution to stop
 	 *
 	 * @param {string} executionId The id of the execution to stop
+	 * @param {string} timeout String 'timeout' given if stop due to timeout
 	 * @returns {(Promise<IRun | undefined>)}
 	 * @memberof ActiveExecutions
 	 */
-	async stopExecution(executionId: string): Promise<IRun | undefined> {
+	async stopExecution(executionId: string, timeout?: string): Promise<IRun | undefined> {
 		if (this.activeExecutions[executionId] === undefined) {
 			// There is no execution running with that id
 			return;
@@ -82,13 +100,20 @@ export class ActiveExecutions {
 
 		// In case something goes wrong make sure that promise gets first
 		// returned that it gets then also resolved correctly.
-		setTimeout(() => {
-			if (this.activeExecutions[executionId].process.connected) {
-				this.activeExecutions[executionId].process.send({
-					type: 'stopExecution'
-				});
+		if (this.activeExecutions[executionId].process !== undefined) {
+			// Workflow is running in subprocess
+			if (this.activeExecutions[executionId].process!.connected) {
+				setTimeout(() => {
+				// execute on next event loop tick;
+					this.activeExecutions[executionId].process!.send({
+						type: timeout ? timeout : 'stopExecution',
+					});
+				}, 1);
 			}
-		}, 1);
+		} else {
+			// Workflow is running in current process
+			this.activeExecutions[executionId].workflowExecution!.cancel();
+		}
 
 		return this.getPostExecutePromise(executionId);
 	}

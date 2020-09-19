@@ -5,17 +5,24 @@ import {
 
 import {
 	IDataObject,
+	ILoadOptionsFunctions,
 } from 'n8n-workflow';
 
-import { OptionsWithUri } from 'request';
-
+import {
+	OptionsWithUri,
+} from 'request';
 
 export interface ICustomInterface {
 	name: string;
+	key: string;
 	options?: Array<{
 		id: number;
 		label: string;
 	}>;
+}
+
+export interface ICustomProperties {
+	[key: string]: ICustomInterface;
 }
 
 /**
@@ -27,19 +34,13 @@ export interface ICustomInterface {
  * @param {object} body
  * @returns {Promise<any>}
  */
-export async function pipedriveApiRequest(this: IHookFunctions | IExecuteFunctions, method: string, endpoint: string, body: IDataObject, query?: IDataObject, formData?: IDataObject, downloadFile?: boolean): Promise<any> { // tslint:disable-line:no-any
-	const credentials = this.getCredentials('pipedriveApi');
-	if (credentials === undefined) {
-		throw new Error('No credentials got returned!');
-	}
-
-	if (query === undefined) {
-		query = {};
-	}
-
-	query.api_token = credentials.apiToken;
+export async function pipedriveApiRequest(this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions, method: string, endpoint: string, body: IDataObject, query?: IDataObject, formData?: IDataObject, downloadFile?: boolean): Promise<any> { // tslint:disable-line:no-any
+	const authenticationMethod = this.getNodeParameter('authentication', 0);
 
 	const options: OptionsWithUri = {
+		headers: {
+			Accept: 'application/json',
+		},
 		method,
 		qs: query,
 		uri: `https://api.pipedrive.com/v1${endpoint}`,
@@ -59,8 +60,28 @@ export async function pipedriveApiRequest(this: IHookFunctions | IExecuteFunctio
 		options.formData = formData;
 	}
 
+	if (query === undefined) {
+		query = {};
+	}
+
+	let responseData;
+
 	try {
-		const responseData = await this.helpers.request(options);
+		if (authenticationMethod === 'basicAuth' || authenticationMethod === 'apiToken') {
+
+			const credentials = this.getCredentials('pipedriveApi');
+			if (credentials === undefined) {
+				throw new Error('No credentials got returned!');
+			}
+
+			query.api_token = credentials.apiToken;
+
+			//@ts-ignore
+			responseData = await this.helpers.request(options);
+
+		} else {
+			responseData = await this.helpers.requestOAuth2!.call(this, 'pipedriveOAuth2Api', options);
+		}
 
 		if (downloadFile === true) {
 			return {
@@ -76,7 +97,7 @@ export async function pipedriveApiRequest(this: IHookFunctions | IExecuteFunctio
 			additionalData: responseData.additional_data,
 			data: responseData.data,
 		};
-	} catch (error) {
+	} catch(error) {
 		if (error.statusCode === 401) {
 			// Return a clear error
 			throw new Error('The Pipedrive credentials are not valid!');
@@ -84,7 +105,7 @@ export async function pipedriveApiRequest(this: IHookFunctions | IExecuteFunctio
 
 		if (error.response && error.response.body && error.response.body.error) {
 			// Try to return the error prettier
-			let errorMessage = `Pipedrive error response [${error.statusCode}]: ${error.response.body.error}`;
+			let errorMessage = `Pipedrive error response [${error.statusCode}]: ${error.response.body.error.message}`;
 			if (error.response.body.error_info) {
 				errorMessage += ` - ${error.response.body.error_info}`;
 			}
@@ -95,8 +116,6 @@ export async function pipedriveApiRequest(this: IHookFunctions | IExecuteFunctio
 		throw error;
 	}
 }
-
-
 
 /**
  * Make an API request to paginated Pipedrive endpoint
@@ -115,7 +134,7 @@ export async function pipedriveApiRequestAllItems(this: IHookFunctions | IExecut
 	if (query === undefined) {
 		query = {};
 	}
-	query.limit = 500;
+	query.limit = 100;
 	query.start = 0;
 
 	const returnData: IDataObject[] = [];
@@ -124,7 +143,12 @@ export async function pipedriveApiRequestAllItems(this: IHookFunctions | IExecut
 
 	do {
 		responseData = await pipedriveApiRequest.call(this, method, endpoint, body, query);
-		returnData.push.apply(returnData, responseData.data);
+		// the search path returns data diferently
+		if (responseData.data.items) {
+			returnData.push.apply(returnData, responseData.data.items);
+		} else {
+			returnData.push.apply(returnData, responseData.data);
+		}
 
 		query.start = responseData.additionalData.pagination.next_start;
 	} while (
@@ -141,15 +165,14 @@ export async function pipedriveApiRequestAllItems(this: IHookFunctions | IExecut
 
 
 /**
- * Converts names and values of custom properties to their actual values
+ * Gets the custom properties from Pipedrive
  *
  * @export
  * @param {(IHookFunctions | IExecuteFunctions)} this
  * @param {string} resource
- * @param {IDataObject[]} items
- * @returns {Promise<IDataObject[]>}
+ * @returns {Promise<ICustomProperties>}
  */
-export async function pipedriveResolveCustomProperties(this: IHookFunctions | IExecuteFunctions, resource: string, items: IDataObject[]): Promise<void> {
+export async function pipedriveGetCustomProperties(this: IHookFunctions | IExecuteFunctions, resource: string): Promise<ICustomProperties> {
 
 	const endpoints: { [key: string]: string } = {
 		'activity': '/activityFields',
@@ -170,37 +193,83 @@ export async function pipedriveResolveCustomProperties(this: IHookFunctions | IE
 	// Get the custom properties and their values
 	const responseData = await pipedriveApiRequest.call(this, requestMethod, endpoints[resource], body, qs);
 
-	const customProperties: {
-		[key: string]: ICustomInterface;
-	} = {};
+	const customProperties: ICustomProperties = {};
 
 	for (const customPropertyData of responseData.data) {
 		customProperties[customPropertyData.key] = customPropertyData;
 	}
 
+	return customProperties;
+}
+
+
+
+/**
+ * Converts names and values of custom properties from their actual values to the
+ * Pipedrive internal ones
+ *
+ * @export
+ * @param {ICustomProperties} customProperties
+ * @param {IDataObject} item
+ */
+export function pipedriveEncodeCustomProperties(customProperties: ICustomProperties, item: IDataObject): void {
 	let customPropertyData;
 
-	for (const item of items) {
-		// Itterate over all keys and replace the custom ones
-		for (const key of Object.keys(item)) {
-			if (customProperties[key] !== undefined) {
-				// Is a custom property
-				customPropertyData = customProperties[key];
+	for (const key of Object.keys(item)) {
+		customPropertyData = Object.values(customProperties).find(customPropertyData => customPropertyData.name === key);
 
-				// Check if also the value has to be resolved or just the key
-				if (item[key] !== null && item[key] !== undefined && customPropertyData.options !== undefined && Array.isArray(customPropertyData.options)) {
-					// Has an option key so get the actual option-value
-					const propertyOption = customPropertyData.options.find(option => option.id.toString() === item[key]!.toString());
+		if (customPropertyData !== undefined) {
+			// Is a custom property
 
-					if (propertyOption !== undefined) {
-						item[customPropertyData.name as string] = propertyOption.label;
-						delete item[key];
-					}
-				} else {
-					// Does already represent the actual value or is null
-					item[customPropertyData.name as string] = item[key];
+			// Check if also the value has to be resolved or just the key
+			if (item[key] !== null && item[key] !== undefined && customPropertyData.options !== undefined && Array.isArray(customPropertyData.options)) {
+				// Has an option key so get the actual option-value
+				const propertyOption = customPropertyData.options.find(option => option.label.toString() === item[key]!.toString());
+
+				if (propertyOption !== undefined) {
+					item[customPropertyData.key as string] = propertyOption.id;
 					delete item[key];
 				}
+			} else {
+				// Does already represent the actual value or is null
+				item[customPropertyData.key as string] = item[key];
+				delete item[key];
+			}
+		}
+	}
+}
+
+
+
+/**
+ * Converts names and values of custom properties to their actual values
+ *
+ * @export
+ * @param {ICustomProperties} customProperties
+ * @param {IDataObject} item
+ */
+export function pipedriveResolveCustomProperties(customProperties: ICustomProperties, item: IDataObject): void {
+	let customPropertyData;
+
+	// Itterate over all keys and replace the custom ones
+	for (const key of Object.keys(item)) {
+		if (customProperties[key] !== undefined) {
+			// Is a custom property
+			customPropertyData = customProperties[key];
+
+			// Check if also the value has to be resolved or just the key
+			if (item[key] !== null && item[key] !== undefined && customPropertyData.options !== undefined && Array.isArray(customPropertyData.options)) {
+				// Has an option key so get the actual option-value
+				const propertyOption = customPropertyData.options.find(option => option.id.toString() === item[key]!.toString());
+
+				if (propertyOption !== undefined) {
+					item[customPropertyData.name as string] = propertyOption.label;
+					delete item[key];
+				}
+			} else {
+				// Does already represent the actual value or is null
+				item[customPropertyData.name as string] = item[key];
+				delete item[key];
 			}
 		}
 	}

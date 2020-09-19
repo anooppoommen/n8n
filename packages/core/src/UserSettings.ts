@@ -41,8 +41,13 @@ export async function prepareUserSettings(): Promise<IUserSettings> {
 		userSettings = {};
 	}
 
-	// Settings and/or key do not exist. So generate a new encryption key
-	userSettings.encryptionKey = randomBytes(24).toString('base64');
+	if (process.env[ENCRYPTION_KEY_ENV_OVERWRITE] !== undefined) {
+		// Use the encryption key which got set via environment
+		userSettings.encryptionKey = process.env[ENCRYPTION_KEY_ENV_OVERWRITE];
+	} else {
+		// Generate a new encryption key
+		userSettings.encryptionKey = randomBytes(24).toString('base64');
+	}
 
 	console.log(`UserSettings got generated and saved to: ${settingsPath}`);
 
@@ -143,7 +148,6 @@ export async function writeUserSettings(userSettings: IUserSettings, settingsPat
  */
 export async function getUserSettings(settingsPath?: string, ignoreCache?: boolean): Promise<IUserSettings | undefined> {
 	if (settingsCache !== undefined && ignoreCache !== true) {
-
 		return settingsCache;
 	}
 
@@ -159,9 +163,14 @@ export async function getUserSettings(settingsPath?: string, ignoreCache?: boole
 	}
 
 	const settingsFile = await fsReadFile(settingsPath, 'utf8');
-	settingsCache = JSON.parse(settingsFile);
 
-	return JSON.parse(settingsFile) as IUserSettings;
+	try {
+		settingsCache = JSON.parse(settingsFile);
+	} catch (error) {
+		throw new Error(`Error parsing n8n-config file "${settingsPath}". It does not seem to be valid JSON.`);
+	}
+
+	return settingsCache as IUserSettings;
 }
 
 

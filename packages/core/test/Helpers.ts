@@ -1,6 +1,9 @@
 import { set } from 'lodash';
 
 import {
+	ICredentialDataDecryptedObject,
+	ICredentialsHelper,
+	IExecuteWorkflowInfo,
 	INodeExecutionData,
 	INodeParameters,
 	INodeType,
@@ -8,13 +11,29 @@ import {
 	INodeTypeData,
 	IRun,
 	ITaskData,
+	IWorkflowBase,
 	IWorkflowExecuteAdditionalData,
+	WorkflowHooks,
 } from 'n8n-workflow';
 
 import {
+	Credentials,
 	IDeferredPromise,
 	IExecuteFunctions,
 } from '../src';
+
+
+export class CredentialsHelper extends ICredentialsHelper {
+	getDecrypted(name: string, type: string): ICredentialDataDecryptedObject {
+		return {};
+	}
+
+	getCredentials(name: string, type: string): Credentials {
+		return new Credentials('', '', [], '');
+	}
+
+	async updateCredentials(name: string, type: string, data: ICredentialDataDecryptedObject): Promise<void> {}
+}
 
 
 class NodeTypesClass implements INodeTypes {
@@ -248,20 +267,34 @@ export function NodeTypes(): NodeTypesClass {
 
 
 export function WorkflowExecuteAdditionalData(waitPromise: IDeferredPromise<IRun>, nodeExecutionOrder: string[]): IWorkflowExecuteAdditionalData {
+	const hookFunctions = {
+		nodeExecuteAfter: [
+			async (nodeName: string, data: ITaskData): Promise<void> => {
+				nodeExecutionOrder.push(nodeName);
+			},
+		],
+		workflowExecuteAfter: [
+			async (fullRunData: IRun): Promise<void> => {
+				waitPromise.resolve(fullRunData);
+			},
+		],
+	};
+
+	const workflowData: IWorkflowBase = {
+		name: '',
+		createdAt: new Date(),
+		updatedAt: new Date(),
+		active: true,
+		nodes: [],
+		connections: {},
+	};
+
 	return {
 		credentials: {},
-		hooks: {
-			nodeExecuteAfter: [
-				async (nodeName: string, data: ITaskData): Promise<void> => {
-					nodeExecutionOrder.push(nodeName);
-				},
-			],
-			workflowExecuteAfter: [
-				async (fullRunData: IRun): Promise<void> => {
-					waitPromise.resolve(fullRunData);
-				},
-			],
-		},
+		credentialsHelper: new CredentialsHelper({}, ''),
+		hooks: new WorkflowHooks(hookFunctions, 'trigger', '1', workflowData),
+		executeWorkflow: async (workflowInfo: IExecuteWorkflowInfo): Promise<any> => {}, // tslint:disable-line:no-any
+		restApiUrl: '',
 		encryptionKey: 'test',
 		timezone: 'America/New_York',
 		webhookBaseUrl: 'webhook',

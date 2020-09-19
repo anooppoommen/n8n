@@ -4,10 +4,16 @@ import {
 } from 'n8n-core';
 
 import {
-	IDataObject,
+	IDataObject, ILoadOptionsFunctions, INodeProperties,
 } from 'n8n-workflow';
 
 import { OptionsWithUri } from 'request';
+
+export interface IProduct {
+	fields: {
+		item?: object[];
+	};
+}
 
 
 /**
@@ -19,7 +25,7 @@ import { OptionsWithUri } from 'request';
  * @param {object} body
  * @returns {Promise<any>}
  */
-export async function activeCampaignApiRequest(this: IHookFunctions | IExecuteFunctions, method: string, endpoint: string, body: IDataObject, query?: IDataObject, dataKey?: string): Promise<any> { // tslint:disable-line:no-any
+export async function activeCampaignApiRequest(this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions, method: string, endpoint: string, body: IDataObject, query?: IDataObject, dataKey?: string): Promise<any> { // tslint:disable-line:no-any
 	const credentials = this.getCredentials('activeCampaignApi');
 	if (credentials === undefined) {
 		throw new Error('No credentials got returned!');
@@ -44,7 +50,7 @@ export async function activeCampaignApiRequest(this: IHookFunctions | IExecuteFu
 	}
 
 	try {
-		const responseData = await this.helpers.request(options);
+		const responseData = await this.helpers.request!(options);
 
 		if (responseData.success === false) {
 			throw new Error(`ActiveCampaign error response: ${responseData.error} (${responseData.error_info})`);
@@ -81,7 +87,7 @@ export async function activeCampaignApiRequest(this: IHookFunctions | IExecuteFu
  * @param {IDataObject} [query]
  * @returns {Promise<any>}
  */
-export async function activeCampaignApiRequestAllItems(this: IHookFunctions | IExecuteFunctions, method: string, endpoint: string, body: IDataObject, query?: IDataObject, dataKey?: string): Promise<any> { // tslint:disable-line:no-any
+export async function activeCampaignApiRequestAllItems(this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions, method: string, endpoint: string, body: IDataObject, query?: IDataObject, dataKey?: string): Promise<any> { // tslint:disable-line:no-any
 
 	if (query === undefined) {
 		query = {};
@@ -99,10 +105,14 @@ export async function activeCampaignApiRequestAllItems(this: IHookFunctions | IE
 
 		if (dataKey === undefined) {
 			returnData.push.apply(returnData, responseData);
-			itemsReceived += returnData.length;
+			if (returnData !== undefined) {
+				itemsReceived += returnData.length;
+			}
 		} else {
 			returnData.push.apply(returnData, responseData[dataKey]);
-			itemsReceived += responseData[dataKey].length;
+			if (responseData[dataKey] !== undefined) {
+				itemsReceived += responseData[dataKey].length;
+			}
 		}
 
 		query.offset = itemsReceived;
@@ -113,4 +123,67 @@ export async function activeCampaignApiRequestAllItems(this: IHookFunctions | IE
 	);
 
 	return returnData;
+}
+
+export function activeCampaignDefaultGetAllProperties(resource: string, operation: string): INodeProperties[] {
+	return [
+		{
+			displayName: 'Return All',
+			name: 'returnAll',
+			type: 'boolean',
+			displayOptions: {
+				show: {
+					operation: [
+						operation,
+					],
+					resource: [
+						resource,
+					],
+				},
+			},
+			default: false,
+			description: 'If all results should be returned or only up to a given limit.',
+		},
+		{
+			displayName: 'Limit',
+			name: 'limit',
+			type: 'number',
+			displayOptions: {
+				show: {
+					operation: [
+						operation,
+					],
+					resource: [
+						resource,
+					],
+					returnAll: [
+						false,
+					],
+				},
+			},
+			typeOptions: {
+				minValue: 1,
+				maxValue: 500,
+			},
+			default: 100,
+			description: 'How many results to return.',
+		},
+		{
+			displayName: 'Simple',
+			name: 'simple',
+			type: 'boolean',
+			displayOptions: {
+				show: {
+					operation: [
+						operation,
+					],
+					resource: [
+						resource,
+					],
+				},
+			},
+			default: true,
+			description: 'When set to true a simplify version of the response will be used else the raw data.',
+		},
+	];
 }

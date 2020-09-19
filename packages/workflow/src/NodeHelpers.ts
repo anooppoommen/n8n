@@ -23,6 +23,242 @@ import {
 
 import { get } from 'lodash';
 
+
+
+/**
+ * Gets special parameters which should be added to nodeTypes depending
+ * on their type or configuration
+ *
+ * @export
+ * @param {INodeType} nodeType
+ * @returns
+ */
+export function getSpecialNodeParameters(nodeType: INodeType) {
+	if (nodeType.description.polling === true) {
+		return [
+			{
+				displayName: 'Poll Times',
+				name: 'pollTimes',
+				type: 'fixedCollection',
+				typeOptions: {
+					multipleValues: true,
+					multipleValueButtonText: 'Add Poll Time',
+				},
+				default: {},
+				description: 'Time at which polling should occur.',
+				placeholder: 'Add Poll Time',
+				options: [
+					{
+						name: 'item',
+						displayName: 'Item',
+						values: [
+							{
+								displayName: 'Mode',
+								name: 'mode',
+								type: 'options',
+								options: [
+									{
+										name: 'Every Minute',
+										value: 'everyMinute',
+									},
+									{
+										name: 'Every Hour',
+										value: 'everyHour',
+									},
+									{
+										name: 'Every Day',
+										value: 'everyDay',
+									},
+									{
+										name: 'Every Week',
+										value: 'everyWeek',
+									},
+									{
+										name: 'Every Month',
+										value: 'everyMonth',
+									},
+									{
+										name: 'Every X',
+										value: 'everyX',
+									},
+									{
+										name: 'Custom',
+										value: 'custom',
+									},
+								],
+								default: 'everyDay',
+								description: 'How often to trigger.',
+							},
+							{
+								displayName: 'Hour',
+								name: 'hour',
+								type: 'number',
+								typeOptions: {
+									minValue: 0,
+									maxValue: 23,
+								},
+								displayOptions: {
+									hide: {
+										mode: [
+											'custom',
+											'everyHour',
+											'everyMinute',
+											'everyX',
+										],
+									},
+								},
+								default: 14,
+								description: 'The hour of the day to trigger (24h format).',
+							},
+							{
+								displayName: 'Minute',
+								name: 'minute',
+								type: 'number',
+								typeOptions: {
+									minValue: 0,
+									maxValue: 59,
+								},
+								displayOptions: {
+									hide: {
+										mode: [
+											'custom',
+											'everyMinute',
+											'everyX',
+										],
+									},
+								},
+								default: 0,
+								description: 'The minute of the day to trigger.',
+							},
+							{
+								displayName: 'Day of Month',
+								name: 'dayOfMonth',
+								type: 'number',
+								displayOptions: {
+									show: {
+										mode: [
+											'everyMonth',
+										],
+									},
+								},
+								typeOptions: {
+									minValue: 1,
+									maxValue: 31,
+								},
+								default: 1,
+								description: 'The day of the month to trigger.',
+							},
+							{
+								displayName: 'Weekday',
+								name: 'weekday',
+								type: 'options',
+								displayOptions: {
+									show: {
+										mode: [
+											'everyWeek',
+										],
+									},
+								},
+								options: [
+									{
+										name: 'Monday',
+										value: '1',
+									},
+									{
+										name: 'Tuesday',
+										value: '2',
+									},
+									{
+										name: 'Wednesday',
+										value: '3',
+									},
+									{
+										name: 'Thursday',
+										value: '4',
+									},
+									{
+										name: 'Friday',
+										value: '5',
+									},
+									{
+										name: 'Saturday',
+										value: '6',
+									},
+									{
+										name: 'Sunday',
+										value: '0',
+									},
+								],
+								default: '1',
+								description: 'The weekday to trigger.',
+							},
+							{
+								displayName: 'Cron Expression',
+								name: 'cronExpression',
+								type: 'string',
+								displayOptions: {
+									show: {
+										mode: [
+											'custom',
+										],
+									},
+								},
+								default: '* * * * * *',
+								description: 'Use custom cron expression. Values and ranges as follows:<ul><li>Seconds: 0-59</li><li>Minutes: 0 - 59</li><li>Hours: 0 - 23</li><li>Day of Month: 1 - 31</li><li>Months: 0 - 11 (Jan - Dec)</li><li>Day of Week: 0 - 6 (Sun - Sat)</li></ul>',
+							},
+							{
+								displayName: 'Value',
+								name: 'value',
+								type: 'number',
+								typeOptions: {
+									minValue: 0,
+									maxValue: 1000,
+								},
+								displayOptions: {
+									show: {
+										mode: [
+											'everyX',
+										],
+									},
+								},
+								default: 2,
+								description: 'All how many X minutes/hours it should trigger.',
+							},
+							{
+								displayName: 'Unit',
+								name: 'unit',
+								type: 'options',
+								displayOptions: {
+									show: {
+										mode: [
+											'everyX',
+										],
+									},
+								},
+								options: [
+									{
+										name: 'Minutes',
+										value: 'minutes'
+									},
+									{
+										name: 'Hours',
+										value: 'hours'
+									},
+								],
+								default: 'hours',
+								description: 'If it should trigger all X minutes or hours.',
+							},
+						],
+					},
+				],
+			},
+		];
+	}
+
+	return [];
+}
+
+
 /**
  * Returns if the parameter should be displayed or not
  *
@@ -41,18 +277,26 @@ export function displayParameter(nodeValues: INodeParameters, parameter: INodePr
 	nodeValuesRoot = nodeValuesRoot || nodeValues;
 
 	let value;
+	const values: any[] = []; // tslint:disable-line:no-any
 	if (parameter.displayOptions.show) {
 		// All the defined rules have to match to display parameter
 		for (const propertyName of Object.keys(parameter.displayOptions.show)) {
 			if (propertyName.charAt(0) === '/') {
 				// Get the value from the root of the node
-				value = nodeValuesRoot[propertyName.slice(1)];
+				value = get(nodeValuesRoot, propertyName.slice(1));
 			} else {
 				// Get the value from current level
-				value = nodeValues[propertyName];
+				value = get(nodeValues, propertyName);
 			}
 
-			if (value === undefined || !parameter.displayOptions.show[propertyName].includes(value as string)) {
+			values.length = 0;
+			if (!Array.isArray(value)) {
+				values.push(value);
+			} else {
+				values.push.apply(values, value);
+			}
+
+			if (values.length === 0 || !parameter.displayOptions.show[propertyName].some(v => values.includes(v))) {
 				return false;
 			}
 		}
@@ -63,12 +307,20 @@ export function displayParameter(nodeValues: INodeParameters, parameter: INodePr
 		for (const propertyName of Object.keys(parameter.displayOptions.hide)) {
 			if (propertyName.charAt(0) === '/') {
 				// Get the value from the root of the node
-				value = nodeValuesRoot[propertyName.slice(1)];
+				value = get(nodeValuesRoot, propertyName.slice(1));
 			} else {
 				// Get the value from current level
-				value = nodeValues[propertyName];
+				value = get(nodeValues, propertyName);
 			}
-			if (value !== undefined && parameter.displayOptions.hide[propertyName].includes(value as string)) {
+
+			values.length = 0;
+			if (!Array.isArray(value)) {
+				values.push(value);
+			} else {
+				values.push.apply(values, value);
+			}
+
+			if (values.length !== 0 && parameter.displayOptions.hide[propertyName].some(v => values.includes(v))) {
 				return false;
 			}
 		}
@@ -239,7 +491,7 @@ export function getParamterResolveOrder(nodePropertiesArray: INodeProperties[], 
 		}
 
 		if (itterations > lastIndexReduction + nodePropertiesArray.length) {
-			throw new Error('Could not resolve parameter depenencies!');
+			throw new Error('Could not resolve parameter depenencies. Max itterations got reached!');
 		}
 		lastIndexLength = indexToResolve.length;
 	}
@@ -321,8 +573,8 @@ export function getNodeParameters(nodePropertiesArray: INodeProperties[], nodeVa
 
 			if (returnDefaults === true) {
 				// Set also when it has the default value
-				if (['boolean', 'number'].includes(nodeProperties.type)) {
-					// Boolean and numbers are special as false and 0 are valid values
+				if (['boolean', 'number', 'options'].includes(nodeProperties.type)) {
+					// Boolean, numbers and options are special as false and 0 are valid values
 					// and should not be replaced with default value
 					nodeParameters[nodeProperties.name] = nodeValues[nodeProperties.name] !== undefined ? nodeValues[nodeProperties.name] : nodeProperties.default;
 				} else {
@@ -492,9 +744,57 @@ export function getNodeWebhooks(workflow: Workflow, node: INode, additionalData:
 		return [];
 	}
 
-	if (workflow.id === undefined) {
-		// Workflow has no id which means it is not saved and so  webhooks
-		// will not be enabled
+	const nodeType = workflow.nodeTypes.getByName(node.type) as INodeType;
+
+	if (nodeType.description.webhooks === undefined) {
+		// Node does not have any webhooks so return
+		return [];
+	}
+
+	const workflowId = workflow.id || '__UNSAVED__';
+
+	const returnData: IWebhookData[] = [];
+	for (const webhookDescription of nodeType.description.webhooks) {
+		let nodeWebhookPath = workflow.expression.getSimpleParameterValue(node, webhookDescription['path']);
+		if (nodeWebhookPath === undefined) {
+			// TODO: Use a proper logger
+			console.error(`No webhook path could be found for node "${node.name}" in workflow "${workflowId}".`);
+			continue;
+		}
+
+		nodeWebhookPath = nodeWebhookPath.toString();
+
+		if (nodeWebhookPath.charAt(0) === '/') {
+			nodeWebhookPath = nodeWebhookPath.slice(1);
+		}
+
+		const isFullPath: boolean = workflow.expression.getSimpleParameterValue(node, webhookDescription['isFullPath'], false) as boolean;
+		const path = getNodeWebhookPath(workflowId, node, nodeWebhookPath, isFullPath);
+
+		const httpMethod = workflow.expression.getSimpleParameterValue(node, webhookDescription['httpMethod'], 'GET');
+
+		if (httpMethod === undefined) {
+			// TODO: Use a proper logger
+			console.error(`The webhook "${path}" for node "${node.name}" in workflow "${workflowId}" could not be added because the httpMethod is not defined.`);
+			continue;
+		}
+
+		returnData.push({
+			httpMethod: httpMethod.toString() as WebhookHttpMethod,
+			node: node.name,
+			path,
+			webhookDescription,
+			workflowId,
+			workflowExecuteAdditionalData: additionalData,
+		});
+	}
+
+	return returnData;
+}
+
+export function getNodeWebhooksBasic(workflow: Workflow, node: INode): IWebhookData[] {
+	if (node.disabled === true) {
+		// Node is disabled so webhooks will also not be enabled
 		return [];
 	}
 
@@ -505,12 +805,14 @@ export function getNodeWebhooks(workflow: Workflow, node: INode, additionalData:
 		return [];
 	}
 
+	const workflowId = workflow.id || '__UNSAVED__';
+
 	const returnData: IWebhookData[] = [];
 	for (const webhookDescription of nodeType.description.webhooks) {
-		let nodeWebhookPath = workflow.getSimpleParameterValue(node, webhookDescription['path'], 'GET');
+		let nodeWebhookPath = workflow.expression.getSimpleParameterValue(node, webhookDescription['path']);
 		if (nodeWebhookPath === undefined) {
 			// TODO: Use a proper logger
-			console.error(`No webhook path could be found for node "${node.name}" in workflow "${workflow.id}".`);
+			console.error(`No webhook path could be found for node "${node.name}" in workflow "${workflowId}".`);
 			continue;
 		}
 
@@ -520,23 +822,25 @@ export function getNodeWebhooks(workflow: Workflow, node: INode, additionalData:
 			nodeWebhookPath = nodeWebhookPath.slice(1);
 		}
 
-		const path = getNodeWebhookPath(workflow.id, node, nodeWebhookPath);
+		const isFullPath: boolean = workflow.expression.getSimpleParameterValue(node, webhookDescription['isFullPath'], false) as boolean;
 
-		const httpMethod = workflow.getSimpleParameterValue(node, webhookDescription['httpMethod'], 'GET');
+		const path = getNodeWebhookPath(workflowId, node, nodeWebhookPath, isFullPath);
+
+		const httpMethod = workflow.expression.getSimpleParameterValue(node, webhookDescription['httpMethod']);
 
 		if (httpMethod === undefined) {
 			// TODO: Use a proper logger
-			console.error(`The webhook "${path}" for node "${node.name}" in workflow "${workflow.id}" could not be added because the httpMethod is not defined.`);
+			console.error(`The webhook "${path}" for node "${node.name}" in workflow "${workflowId}" could not be added because the httpMethod is not defined.`);
 			continue;
 		}
 
+		//@ts-ignore
 		returnData.push({
 			httpMethod: httpMethod.toString() as WebhookHttpMethod,
 			node: node.name,
 			path,
 			webhookDescription,
-			workflow,
-			workflowExecuteAdditionalData: additionalData,
+			workflowId,
 		});
 	}
 
@@ -553,8 +857,17 @@ export function getNodeWebhooks(workflow: Workflow, node: INode, additionalData:
  * @param {string} path
  * @returns {string}
  */
-export function getNodeWebhookPath(workflowId: string, node: INode, path: string): string {
-	return `${workflowId}/${encodeURIComponent(node.name.toLowerCase())}/${path}`;
+export function getNodeWebhookPath(workflowId: string, node: INode, path: string, isFullPath?: boolean): string {
+	let webhookPath = '';
+	if (node.webhookId === undefined) {
+		webhookPath = `${workflowId}/${encodeURIComponent(node.name.toLowerCase())}/${path}`;
+	} else {
+		if (isFullPath === true) {
+			return path;
+		}
+		webhookPath = `${node.webhookId}/${path}`;
+	}
+	return webhookPath;
 }
 
 
@@ -566,11 +879,11 @@ export function getNodeWebhookPath(workflowId: string, node: INode, path: string
  * @param {string} workflowId
  * @param {string} nodeTypeName
  * @param {string} path
+ * @param {boolean} isFullPath
  * @returns {string}
  */
-export function getNodeWebhookUrl(baseUrl: string, workflowId: string, node: INode, path: string): string {
-	// return `${baseUrl}/${workflowId}/${nodeTypeName}/${path}`;
-	return `${baseUrl}/${getNodeWebhookPath(workflowId, node, path)}`;
+export function getNodeWebhookUrl(baseUrl: string, workflowId: string, node: INode, path: string, isFullPath?: boolean): string {
+	return `${baseUrl}/${getNodeWebhookPath(workflowId, node, path, isFullPath)}`;
 }
 
 
@@ -843,5 +1156,29 @@ export function mergeIssues(destination: INodeIssues, source: INodeIssues | null
 
 	if (source.typeUnknown === true) {
 		destination.typeUnknown = true;
+	}
+}
+
+
+
+/**
+ * Merges the given node properties
+ *
+ * @export
+ * @param {INodeProperties[]} mainProperties
+ * @param {INodeProperties[]} addProperties
+ */
+export function mergeNodeProperties(mainProperties: INodeProperties[], addProperties: INodeProperties[]): void {
+	let existingIndex: number;
+	for (const property of addProperties) {
+		existingIndex = mainProperties.findIndex(element => element.name === property.name);
+
+		if (existingIndex === -1) {
+			// Property does not exist yet, so add
+			mainProperties.push(property);
+		} else {
+			// Property exists already, so overwrite
+			mainProperties[existingIndex] = property;
+		}
 	}
 }

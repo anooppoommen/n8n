@@ -10,6 +10,7 @@ import {
 	INode,
 	INodeCredentials,
 	INodeIssues,
+	INodeParameters,
 	INodePropertyOptions,
 	INodeTypeDescription,
 	IRunExecutionData,
@@ -50,10 +51,9 @@ declare module 'jsplumb' {
 	interface OnConnectionBindInfo {
 		originalSourceEndpoint: Endpoint;
 		originalTargetEndpoint: Endpoint;
+		getParameters(): { index: number };
 	}
 }
-
-
 
 // EndpointOptions from jsplumb seems incomplete and wrong so we define an own one
 export interface IEndpointOptions {
@@ -121,12 +121,12 @@ export interface IRestApi {
 	getActiveWorkflows(): Promise<string[]>;
 	getActivationError(id: string): Promise<IActivationError | undefined >;
 	getCurrentExecutions(filter: object): Promise<IExecutionsCurrentSummaryExtended[]>;
-	getPastExecutions(filter: object, limit: number, lastStartedAt?: Date): Promise<IExecutionsListResponse>;
+	getPastExecutions(filter: object, limit: number, lastId?: string | number): Promise<IExecutionsListResponse>;
 	stopCurrentExecution(executionId: string): Promise<IExecutionsStopData>;
 	makeRestApiRequest(method: string, endpoint: string, data?: any): Promise<any>; // tslint:disable-line:no-any
 	getSettings(): Promise<IN8nUISettings>;
 	getNodeTypes(): Promise<INodeTypeDescription[]>;
-	getNodeParameterOptions(nodeType: string, methodName: string, credentials?: INodeCredentials): Promise<INodePropertyOptions[]>;
+	getNodeParameterOptions(nodeType: string, methodName: string, currentNodeParameters: INodeParameters, credentials?: INodeCredentials): Promise<INodePropertyOptions[]>;
 	removeTestWebhook(workflowId: string): Promise<boolean>;
 	runWorkflow(runData: IStartRunData): Promise<IExecutionPushResponse>;
 	createNewWorkflow(sendData: IWorkflowData): Promise<IWorkflowDb>;
@@ -143,8 +143,11 @@ export interface IRestApi {
 	getCredentialTypes(): Promise<ICredentialType[]>;
 	getExecution(id: string): Promise<IExecutionResponse>;
 	deleteExecutions(sendData: IExecutionDeleteFilter): Promise<void>;
-	retryExecution(id: string): Promise<boolean>;
+	retryExecution(id: string, loadWorkflow?: boolean): Promise<boolean>;
 	getTimezones(): Promise<IDataObject>;
+	oAuth1CredentialAuthorize(sendData: ICredentialsResponse): Promise<string>;
+	oAuth2CredentialAuthorize(sendData: ICredentialsResponse): Promise<string>;
+	oAuth2Callback(code: string, state: string): Promise<string>;
 }
 
 export interface IBinaryDisplayData {
@@ -153,6 +156,13 @@ export interface IBinaryDisplayData {
 	node: string;
 	outputIndex: number;
 	runIndex: number;
+}
+
+export interface ICredentialsCreatedEvent {
+	data: ICredentialsDecryptedResponse;
+	options: {
+		closeDialog: boolean,
+	};
 }
 
 export interface IStartRunData {
@@ -353,7 +363,6 @@ export interface IPushDataExecutionStarted {
 	workflowName?: string;
 }
 
-
 export interface IPushDataExecutionFinished {
 	data: IRun;
 	executionIdActive: string;
@@ -388,6 +397,8 @@ export interface IN8nUISettings {
 	saveDataSuccessExecution: string;
 	saveManualExecutions: boolean;
 	timezone: string;
+	executionTimeout: number;
+	maxExecutionTimeout: number;
 	urlBaseWebhook: string;
 	versionCli: string;
 }
@@ -398,4 +409,13 @@ export interface IWorkflowSettings extends IWorkflowSettingsWorkflow {
 	saveDataSuccessExecution?: string;
 	saveManualExecutions?: boolean;
 	timezone?: string;
+	executionTimeout?: number;
 }
+
+export interface ITimeoutHMS {
+	hours: number;
+	minutes: number;
+	seconds: number;
+}
+
+export type WorkflowTitleStatus = 'EXECUTING' | 'IDLE' | 'ERROR';
